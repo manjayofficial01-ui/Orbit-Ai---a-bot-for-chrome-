@@ -1,0 +1,36 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {normalizeBase,hostPattern,requestBody,responseText,citations,markdown,readSSE,generate} from '../dist/core.js';
+const cfg={base:'https://api.openai.com/v1',model:'test-model',format:'chat',temperature:'',maxTokens:'',effort:'',search:false};
+const messages=[{role:'system',content:'Be helpful'},{role:'user',content:'Hello'}];
+function stream(text,step=3){const b=new TextEncoder().encode(text);let i=0;return new ReadableStream({pull(c){if(i>=b.length)return c.close();c.enqueue(b.slice(i,i+=step));}});}
+test('normalizes trailing slash',()=>assert.equal(normalizeBase(' https://example.com/v1/ '),'https://example.com/v1'));
+test('rejects nonloopback HTTP',()=>assert.throws(()=>normalizeBase('http://example.com/v1')));
+test('allows localhost HTTP',()=>assert.equal(normalizeBase('http://localhost:11434/v1'),'http://localhost:11434/v1'));
+test('rejects credentials, queries, fragments and executable schemes',()=>{for(const s of ['https://a:b@example.com/v1','https://a.com/v1?k=x','https://a.com/v1#x','javascript:alert(1)'])assert.throws(()=>normalizeBase(s));});
+test('requests hostname scope without API path or port',()=>assert.equal(hostPattern('http://localhost:11434/v1'),'http://localhost/*'));
+test('chat body omits optional defaults',()=>assert.deepEqual(requestBody(cfg,messages),{model:'test-model',stream:true,messages}));
+test('Responses body is stateless and opts out of object storage',()=>{const b=requestBody({...cfg,format:'responses'},messages);assert.equal(b.store,false);assert.deepEqual(b.input,messages);assert.equal(b.messages,undefined);assert.equal(b.previous_response_id,undefined);});
+test('token aliases',()=>{assert.equal(requestBody({...cfg,maxTokens:'42',tokenField:'max_tokens'},messages).max_tokens,42);assert.equal(requestBody({...cfg,maxTokens:'42',format:'responses'},messages).max_output_tokens,42);});
+test('reasoning mappings',()=>{assert.equal(requestBody({...cfg,effort:'high'},messages).reasoning_effort,'high');assert.deepEqual(requestBody({...cfg,effort:'low',format:'responses'},messages).reasoning,{effort:'low'});});
+test('invalid number validation',()=>{for(const c of [{temperature:'nan'},{temperature:'3'},{maxTokens:'-1'},{maxTokens:'2.2'}])assert.throws(()=>requestBody({...cfg,...c},messages));});
+test('model required',()=>assert.throws(()=>requestBody({...cfg,model:''},messages)));
+test('request budget enforced',()=>assert.throws(()=>requestBody(cfg,[{role:'user',content:'a'.repeat(60001)}])));
+test('search restricted by API and origin',()=>{assert.throws(()=>requestBody({...cfg,search:true},messages));assert.throws(()=>requestBody({...cfg,search:true,format:'responses',base:'https://evil.example/v1'},messages));assert.deepEqual(requestBody({...cfg,search:true,format:'responses'},messages).tools,[{type:'web_search'}]);});
+test('extract JSON text and refusals',()=>{assert.equal(responseText({choices:[{message:{content:'hello'}}]}),'hello');assert.equal(responseText({output:[{content:[{text:'a'},{refusal:'no'}]}]}),'ano');});
+test('extract citations',()=>assert.equal(citations({output:[{content:[{annotations:[{type:'url_citation',url:'https://example.com'}]}]}]}).length,1));
+test('markdown includes interruption state',()=>assert.match(markdown({title:'Test',messages:[{role:'assistant',content:'partial',state:'interrupted'}]}),/\[interrupted\]/));
+test('SSE split UTF8 CRLF multiline comments',async()=>{const out=[];await readSSE(stream(':keepalive\r\nevent: delta\r\ndata: héllo 🌍\r\ndata: second\r\n\r\n',1),e=>out.push(e));assert.deepEqual(out,[{event:'delta',data:'héllo 🌍\nsecond'}]);});
+test('SSE last event without final blank',async()=>{const out=[];await readSSE(stream('data: last'),e=>out.push(e));assert.equal(out[0].data,'last');});
+test('SSE oversized frame rejected',async()=>assert.rejects(()=>readSSE(stream('a'.repeat(1000001),1000001),()=>{})));
+async function mockGenerate(response,config=cfg){const old=globalThis.fetch;let output='',sources=[],usage,request;globalThis.fetch=async(url,options)=>{request={url,options};return response;};try{await generate(config,'local-test-key',messages,{signal:new AbortController().signal,onText:x=>output+=x,onSources:x=>sources.push(...x),onUsage:x=>usage=x,onSearch:()=>{}});return {output,sources,usage,request};}finally{globalThis.fetch=old;}}
+test('chat transport + safe fetch options',async()=>{const r=await mockGenerate(new Response(stream('data: {"choices":[{"delta":{"content":"Hello"},"finish_reason":null}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'),{headers:{'content-type':'text/event-stream'}}));assert.equal(r.output,'Hello');assert.equal(r.request.options.redirect,'error');assert.equal(r.request.options.credentials,'omit');assert.equal(r.request.options.referrerPolicy,'no-referrer');assert.equal(r.request.url,'https://api.openai.com/v1/chat/completions');});
+test('Responses semantic stream',async()=>{const r=await mockGenerate(new Response(stream('data: {"type":"response.output_text.delta","delta":"World"}\n\ndata: {"type":"response.completed","response":{"usage":{"total_tokens":5}}}\n\n'),{headers:{'content-type':'text/event-stream'}}),{...cfg,format:'responses'});assert.equal(r.output,'World');assert.equal(r.usage.total_tokens,5);});
+test('JSON fallback',async()=>assert.equal((await mockGenerate(new Response(JSON.stringify({choices:[{message:{content:'JSON'}}]}),{headers:{'content-type':'application/json'}}))).output,'JSON'));
+test('premature stream close is failure',async()=>assert.rejects(()=>mockGenerate(new Response(stream('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'),{headers:{'content-type':'text/event-stream'}})),/before completion/));
+test('provider error body is not leaked',async()=>{await assert.rejects(()=>mockGenerate(new Response('SECRET-KEY',{status:401})),e=>e.message.includes('401')&&!e.message.includes('SECRET'));});
+test('incomplete Responses JSON is failure',async()=>assert.rejects(()=>mockGenerate(new Response(JSON.stringify({status:'incomplete',output_text:'partial'}))),/incomplete/));
+test('manifest least privilege and packaged code',()=>{const m=JSON.parse(fs.readFileSync(new URL('../dist/manifest.json',import.meta.url)));assert.equal(m.manifest_version,3);assert.equal(m.minimum_chrome_version,'116');assert.equal(m.host_permissions,undefined);assert.equal(m.content_scripts,undefined);assert.ok(!m.permissions.includes('unlimitedStorage'));assert.ok(m.content_security_policy.extension_pages.includes("script-src 'self'"));});
+test('data URL images use transport budget rather than text budget',()=>{const image='data:image/jpeg;base64,'+'a'.repeat(100000);const mm=[{role:'user',content:[{type:'text',text:'describe'},{type:'image_url',image_url:{url:image}}]}];assert.doesNotThrow(()=>requestBody(cfg,mm));});
+test('oversized screenshot transport is rejected',()=>{const image='data:image/jpeg;base64,'+'a'.repeat(5000001);const mm=[{role:'user',content:[{type:'text',text:'describe'},{type:'image_url',image_url:{url:image}}]}];assert.throws(()=>requestBody(cfg,mm),/5 MB/);});

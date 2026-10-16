@@ -1,0 +1,13 @@
+# Tooling / local artifacts
+.playwright-mcp/
+*.log
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# Dependencies (none required; no build toolchain)
+node_modules/

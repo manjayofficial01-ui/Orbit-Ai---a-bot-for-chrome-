@@ -1,0 +1,49 @@
+{
+  "manifest_version": 3,
+  "name": "Orbit AI \u2014 Your Provider, Your Workspace",
+  "version": "1.0.0",
+  "minimum_chrome_version": "116",
+  "description": "Independent bring-your-own-provider AI assistant with streaming chat, page context and local history.",
+  "permissions": [
+    "sidePanel",
+    "storage",
+    "activeTab",
+    "scripting",
+    "contextMenus"
+  ],
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Open Orbit AI",
+    "default_icon": {
+      "16": "icon-16.png",
+      "32": "icon-32.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "index.html"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+Shift+O"
+      },
+      "description": "Open Orbit"
+    }
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'; img-src 'self' data:; connect-src https: http://localhost:* http://127.0.0.1:* http://[::1]:*;"
+  },
+  "icons": {
+    "16": "icon-16.png",
+    "32": "icon-32.png",
+    "48": "icon-48.png",
+    "128": "icon-128.png"
+  }
+}

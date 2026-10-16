@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Orbit AI</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<a class="skip" href="#messages">Skip to conversation</a>
+<div id="app" class="app">
+  <aside id="sidebar" aria-label="Conversation navigation">
+    <div class="brand-row">
+      <div class="brand"><svg aria-label="Orbit AI" viewBox="0 0 32 32"><circle cx="16" cy="16" r="5" fill="currentColor"/><ellipse cx="16" cy="16" rx="14" ry="7" transform="rotate(-25 16 16)"/><circle cx="27" cy="10" r="2" fill="currentColor"/></svg><span>Orbit</span></div>
+      <button id="closeNav" class="icon" aria-label="Close conversation list">×</button>
+    </div>
+    <button id="new" class="primary wide">New conversation <kbd>⌘K</kbd></button>
+    <label class="search"><span aria-hidden="true">⌕</span><input id="filter" placeholder="Search conversations" aria-label="Search conversations"></label>
+    <nav id="history" aria-label="Conversation history"></nav>
+    <div id="sidebarResize" role="separator" aria-orientation="vertical" aria-label="Resize conversation panel" title="Drag to expand or shrink the panel. Double-click to reset." tabindex="0"></div>
+    <div class="panel-size" aria-label="Conversation panel size">
+      <button id="navShrink" title="Shrink conversation panel">− Shrink</button>
+      <button id="navGrow" title="Expand conversation panel">+ Expand</button>
+    </div>
+    <div class="aside-footer"><span class="status-dot"></span><span>Local workspace</span><small>BYOP</small></div>
+  </aside>
+  <div id="navScrim" class="scrim" hidden></div>
+  <main>
+    <header>
+      <div class="header-start">
+        <button id="menu" class="icon" aria-label="Open conversation list" title="Conversations">☰</button>
+        <button id="toggleNav" class="icon" aria-label="Show or hide conversation panel" title="Show/hide conversations (Ctrl+B)" aria-expanded="true">◫</button>
+        <button id="back" class="icon" aria-label="Go back" title="Back">←</button>
+        <button id="forward" class="icon" aria-label="Go forward" title="Forward">→</button>
+        <div class="conversation-title"><strong id="title">New conversation</strong><small id="connection">Connect your AI provider</small></div>
+      </div>
+      <div class="header-actions">
+        <button id="textSmaller" class="icon text-control" aria-label="Decrease text size" title="Decrease text">A−</button>
+        <button id="textLarger" class="icon text-control" aria-label="Increase text size" title="Increase text">A+</button>
+        <button id="theme" class="icon" aria-label="Toggle color theme" title="Theme">◐</button>
+        <button id="winShrink" class="icon win-resize" aria-label="Shrink floatable window" title="Shrink floatable window">−</button>
+        <button id="winGrow" class="icon win-resize" aria-label="Expand floatable window" title="Expand floatable window">+</button>
+        <button id="float" class="icon" aria-label="Open floatable window" title="Open floatable window">⧉</button>
+        <button id="expand" class="icon" aria-label="Open full workspace" title="Open full workspace">↗</button>
+        <button id="settings">Settings</button>
+      </div>
+    </header>
+    <section id="messages" tabindex="-1" aria-label="Conversation" aria-live="polite"></section>
+    <div id="status" role="status" aria-live="polite"></div>
+    <footer>
+      <div id="attachments" aria-label="Attached context"></div>
+      <div class="composer">
+        <textarea id="prompt" rows="3" placeholder="Ask about this page, research, write, or automate…" aria-label="Message"></textarea>
+        <div class="toolbar">
+          <button id="agent" class="tool-strong">Act on page</button>
+          <button id="page">Add page</button>
+          <button id="screenshot">Screenshot</button>
+          <button id="file">File</button>
+          <input type="file" id="fileInput" hidden accept=".txt,.md,.csv,.json,.log,.js,.ts,.py,.html,.css,.xml,.yaml,.yml,.sql,.sh">
+          <select id="style" aria-label="Assistant style"><option>Balanced</option><option>Analyst</option><option>Code</option><option>Creative</option></select>
+          <button id="composerToggle" title="Expand or shrink the composer">Expand</button>
+          <span class="spacer"></span><button id="stop" hidden>Stop</button><button id="send" class="primary">Send <span aria-hidden="true">↑</span></button>
+        </div>
+      </div>
+      <div class="footer-meta"><span>Page context is opt-in. Review before sending.</span><div class="chat-actions"><button id="regenerate">Regenerate</button><button id="export">Export</button><button id="delete">Delete</button></div></div>
+    </footer>
+  </main>
+</div>
+
+<dialog id="settingsDialog" class="settings-dialog">
+<form id="settingsForm">
+  <div class="dialog-head"><div><span class="eyebrow">Workspace settings</span><h2>Connect your provider</h2></div><button type="button" id="closeSettings" class="icon" aria-label="Close settings">×</button></div>
+  <nav class="settings-tabs" aria-label="Settings sections"><button type="button" data-settings-tab="connection" class="active">Connection</button><button type="button" data-settings-tab="context">Context</button><button type="button" data-settings-tab="appearance">Appearance</button><button type="button" data-settings-tab="advanced">Advanced</button></nav>
+  <section data-settings-panel="connection">
+    <p class="section-note">Your key stays on this device. Orbit reuses it after restart until you remove it.</p>
+    <div class="form-grid two"><label>Provider profile<select id="provider"><option value="openai">OpenAI</option><option value="xai">xAI / Grok</option><option value="openrouter">OpenRouter</option><option value="ollama">Ollama local</option><option value="custom">Custom compatible</option></select></label><label>API format<select id="format"><option value="chat">Chat Completions</option><option value="responses">Responses</option></select></label></div>
+    <label>API base URL<input id="base" type="url" required placeholder="https://api.example.com/v1"></label>
+    <label>API key<div class="input-action"><input id="key" type="password" autocomplete="off" placeholder="Saved locally after connection"><button type="button" id="toggleKey">Show</button></div><small id="keyHint">Enter once; leave unchanged to keep the saved key.</small></label>
+    <div class="form-grid model-row"><label>Model<select id="modelSelect" aria-label="Available models"><option value="">Fetch models to choose</option></select></label><label>Exact model ID<input id="model" list="modelList" required placeholder="Auto-selected or enter manually"><datalist id="modelList"></datalist></label></div>
+    <div class="row"><button type="button" id="models" class="primary">Test & fetch models</button><button type="button" id="revoke">Forget key & revoke access</button></div>
+  </section>
+  <section data-settings-panel="context" hidden>
+    <label class="check"><input id="smartContext" type="checkbox"> <span><strong>Smart page context</strong><small>When you explicitly ask about the current page, attach a fresh, privacy-filtered text snapshot automatically.</small></span></label>
+    <label>Context depth<select id="contextDepth"><option value="focused">Focused · selection or visible essentials</option><option value="balanced">Balanced · main page text</option><option value="deep">Deep · larger page snapshot</option></select></label>
+    <label class="check"><input id="autoTitle" type="checkbox"> <span><strong>Smart conversation titles</strong><small>Create concise local titles from your first request.</small></span></label>
+    <label>Custom instructions<textarea id="instructions" rows="4" maxlength="8000" placeholder="How Orbit should respond"></textarea></label>
+    <label>Memory notes<textarea id="memory" rows="4" maxlength="8000" placeholder="Facts and preferences you explicitly want sent to this provider"></textarea></label>
+  </section>
+  <section data-settings-panel="appearance" hidden>
+    <fieldset><legend>Text size</legend><div id="fontChoices" class="segmented"><button type="button" data-font="small">Small</button><button type="button" data-font="medium">Medium</button><button type="button" data-font="large">Large</button><button type="button" data-font="xlarge">Extra large</button></div></fieldset>
+    <fieldset><legend>Theme</legend><div id="themeChoices" class="segmented"><button type="button" data-theme-choice="system">System</button><button type="button" data-theme-choice="light">Light</button><button type="button" data-theme-choice="dark">Dark</button></div></fieldset>
+  </section>
+  <section data-settings-panel="advanced" hidden>
+    <div class="form-grid two"><label>Temperature<input id="temperature" type="number" min="0" max="2" step="0.1" placeholder="Provider default"></label><label>Output token cap<input id="maxTokens" type="number" min="1" max="128000" placeholder="Provider default"></label><label>Chat token parameter<select id="tokenField"><option>max_completion_tokens</option><option>max_tokens</option></select></label><label>Reasoning effort<select id="effort"><option value="">Provider default</option><option>low</option><option>medium</option><option>high</option></select></label></div>
+    <label class="check"><input id="search" type="checkbox"> <span><strong>Provider-hosted web search</strong><small>Responses format on supported official hosts; provider charges may apply.</small></span></label>
+    <label class="check"><input id="saveHistory" type="checkbox"> <span><strong>Save conversations locally</strong><small>Conversation data is not encrypted.</small></span></label>
+  </section>
+  <div id="settingsStatus" role="status" aria-live="polite"></div>
+  <div class="dialog-actions"><button type="button" id="clear" class="danger">Delete all local data</button><span class="spacer"></span><button type="button" id="cancelSettings">Cancel</button><button type="submit" class="primary">Save connection</button></div>
+</form>
+</dialog>
+
+<dialog id="contextDialog"><div class="dialog-head"><div><span class="eyebrow">Review before sharing</span><h2 id="contextTitle">Page context</h2></div><button id="cancelContextTop" class="icon" aria-label="Close">×</button></div><p>Webpage text is untrusted and is sent only when you submit your message.</p><textarea id="contextPreview" rows="14" aria-label="Reference preview"></textarea><div class="row end"><button id="cancelContext">Cancel</button><button id="attach" class="primary">Attach reference</button></div></dialog>
+<script type="module" src="app.js"></script>
+</body></html>

@@ -1,0 +1,10 @@
+{
+  "name": "orbit-ai",
+  "version": "2.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/core.test.mjs tests/agent.test.mjs",
+    "check": "node --check dist/app.js && node --check dist/core.js && node --check dist/page-access.js && node --check dist/agent.js && node --check dist/agent-run.js && node --check dist/background.js"
+  }
+}
