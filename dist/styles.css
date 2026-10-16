@@ -61,5 +61,6 @@ header{overflow:hidden}
 .body{overflow-wrap:break-word}
 body[data-mode="popup"] #float{display:none}
 @media(max-width:720px){.header-actions .icon{min-width:36px;min-height:36px}.header-actions>button:not(.icon){padding:0 10px;min-height:36px}}
-@media(max-width:900px){.app{grid-template-columns:var(--sidebar-width,224px) minmax(0,1fr)}.app.nav-hidden{grid-template-columns:0 minmax(0,1fr)}}
-@media(max-width:720px){#toggleNav{display:none}.app>aside{position:fixed}#sidebarResize{display:none}.app.nav-hidden>aside{display:none !important}.app.nav-hidden.nav-open>aside{display:flex !important;transform:translateX(0)}.win-resize{display:none !important}body[data-mode="popup"] .win-resize{display:inline-grid !important}body[data-mode="popup"] #expand,body[data-mode="popup"] #theme{display:inline-grid !important}}
+@media(max-width:380px){#messages{padding:16px 10px 24px}footer{padding:6px 6px 8px}.composer{border-radius:12px}#prompt{padding:12px 12px 4px}.header-actions .icon{min-width:32px;min-height:32px}.conversation-title small{display:none}}
+@media(min-width:721px) and (max-width:900px){.app{grid-template-columns:var(--sidebar-width,224px) minmax(0,1fr)}.app.nav-hidden{grid-template-columns:0 minmax(0,1fr)}}
+@media(max-width:720px){#toggleNav{display:none}.app{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}.app>aside{position:fixed}#sidebarResize{display:none}.app.nav-hidden>aside{display:none !important}.app.nav-hidden.nav-open>aside{display:flex !important;transform:translateX(0)}.win-resize{display:none !important}body[data-mode="popup"] .win-resize{display:inline-grid !important}body[data-mode="popup"] #expand,body[data-mode="popup"] #theme{display:inline-grid !important}}
