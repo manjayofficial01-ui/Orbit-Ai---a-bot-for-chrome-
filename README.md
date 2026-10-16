@@ -23,7 +23,7 @@ Do not delete the extracted folder while using the unpacked extension. This pack
 - Separate Chat Completions and Responses adapters. Stateless message replay; streaming SSE and JSON fallback.
 - Automatic model discovery with GET /models, cached per endpoint, plus manual model-ID fallback. No model names are hardcoded.
 - Stop, explicitly regenerate the latest answer, copy answers/code and export Markdown including references and source URLs.
-- Search local conversation titles; delete chats; navigate recently opened conversations with Back/Forward; responsive history drawer.
+- Search local conversation titles; delete any chat from its × control in the list or the footer; delete individual messages from their Delete button; navigate recently opened conversations with Back/Forward; responsive history drawer.
 - Smart current-page context for page-aware prompts, explicit editable Page preview, visible-tab screenshot attachment, right-click selection draft, and plain-text file attachment.
 - Agent mode (Agent: act on page button): supervised observe-propose-confirm-act-verify loop on the active webpage. Snapshot DOM text + up to 100 editable fields + 120 interactive refs, model proposes max 3 actions per step as fenced orbit-actions JSON, you confirm each step, executor clicks/fills/types/selects/scrolls with token+URL guards and re-snapshots. Max 8 steps. No auto-submit.
 - Balanced, Analyst, Code and Creative instruction styles.
