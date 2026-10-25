@@ -1,6 +1,20 @@
 # Verified test results
 
-Last verified: 2026-10-25 (modernization cycle 2, branch `modernization/2026-10-25-c2`).
+Last verified: 2026-10-26 (modernization cycle 3 — v2.4.0 screenshot & analyze, branch `modernization/2026-10-25-c2`).
+
+- Build: `npm run build` copies 10 extension modules, `src/manifest.json` and the native-host installer into `dist/` — passed. `index.html` and `styles.css` still live only in `dist/` and are edited there (see README).
+- Node syntax checks (`npm run check`): dist/app.js, core.js, page-access.js, agent.js, agent-run.js, background.js, reach-core.js, reach-client.js, research-protocol.js, research-loop.js — all passed; `python -m py_compile` on both native-host files — passed (exit 0).
+- Node built-in test suite: **113 passed, 0 failed** (core, agent, agent-loop, reach-core, research-loop, research-panel, a11y-static, hardening-static).
+- Python native-bridge suite: **12 passed, 0 failed** (`python -m unittest discover -s native-host/tests`).
+- src↔dist parity: all 13 built artifacts byte-identical (`cmp`).
+- Secret scan across src, dist, native-host, scripts, tests and docs: clean.
+- New in cycle 3 (8 new tests total; the 5 feature tests and 3 post-review remediation tests were each demonstrated **failing on the pre-change sources**, then passing):
+  - `agent` — `screenshot` validates as a ref-less capture tool (rejects ref/text, prompt documents it).
+  - `agent-loop` — a screenshot action passes the confirm() gate, captures from the active tab's window, and arrives as a well-formed `image_url` part on the next observation; a non-visible target tab refuses capture; consecutive capture steps prune earlier images to a text note; a pre-switch capture in a `[screenshot, read-tab]` batch is discarded with a note instead of misattributed; a capture dropped by a failed re-snapshot is reported; the Responses format attaches `input_image` parts.
+  - `hardening-static` — the Analyze-now button may only act on a preview opened through the review dialog, must reuse the reviewed capture, must send through the normal `send()` path, and must not overwrite a typed draft with the canned prompt.
+- Not covered by automated tests (unchanged from cycle 2): real-Chrome `captureVisibleTab` pixels, permission prompts, live provider vision round-trips, rendered dialog behavior — see MANUAL-QA 31–35.
+
+## Previous: cycle 2 (2026-10-25)
 
 - Build: `npm run build` copies 10 extension modules, `src/manifest.json` and the native-host installer into `dist/` — passed. `index.html` and `styles.css` still live only in `dist/` and are edited there (see README).
 - Node syntax checks (`npm run check`): dist/app.js, core.js, page-access.js, agent.js, agent-run.js, background.js, reach-core.js, reach-client.js, research-protocol.js, research-loop.js — all passed; `python -m py_compile` on both native-host files — passed (exit 0).

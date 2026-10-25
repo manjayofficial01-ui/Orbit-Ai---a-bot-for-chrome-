@@ -72,6 +72,19 @@ export async function runAgentLoop({cfg,key,goal,onEvent,signal}){
   const transcript=[];
   let stepResults=[];
   let protocolRetries=0;
+  let stepShots=[],stepShotBytes=0;
+  const captureShot=async()=>{
+    try{
+      const t=await chrome.tabs.get(activeTabId);
+      if(t.active===false) return {tool:'screenshot',ok:false,error:'The target tab is not the visible tab of its window, so a capture would show a different page. Make the tab visible, then retry.'};
+      const dataUrl=await chrome.tabs.captureVisibleTab(t.windowId,{format:'jpeg',quality:82});
+      if(typeof dataUrl!=='string'||!dataUrl.startsWith('data:image/')) return {tool:'screenshot',ok:false,error:'Chrome returned no screenshot.'};
+      if(dataUrl.length>3500000) return {tool:'screenshot',ok:false,error:'Screenshot is too large; shrink the window or zoom, then retry.'};
+      if(stepShots.length>=2||stepShotBytes+dataUrl.length>3000000) return {tool:'screenshot',ok:false,error:'Only up to two captures (3 MB total) attach per step; work from the attached image.'};
+      stepShots.push(dataUrl);stepShotBytes+=dataUrl.length;
+      return {tool:'screenshot',ok:true,detail:'captured; the image is attached to your next observation'};
+    }catch(e){ return {tool:'screenshot',ok:false,error:'Capture failed ('+String(e&&e.message||e).slice(0,160)+').'}; }
+  };
   for(let step=1;step<=AGENT_MAX_STEPS;step++){
     signal?.throwIfAborted?.();
     onEvent?.({type:'step',step,text:'Thinking (step '+step+' of '+AGENT_MAX_STEPS+')…'});
@@ -106,9 +119,10 @@ export async function runAgentLoop({cfg,key,goal,onEvent,signal}){
       return {done:false,transcript,steps:step,cancelled:true,url:activeUrl};
     }
     const results=[];
+    stepShots=[];stepShotBytes=0;
     for(const a of parsed.actions){
       signal?.throwIfAborted?.();
-      const r=a.tool==='read-tab'?await switchTab(a.ref):await execAction(activeTabId,activeDocumentId,snapshot,a);
+      const r=a.tool==='read-tab'?await switchTab(a.ref):a.tool==='screenshot'?await captureShot():await execAction(activeTabId,activeDocumentId,snapshot,a);
       results.push(r);
       onEvent?.({type:'action',step,text:r.tool+' '+(r.ref||'')+': '+(r.ok?'ok'+(r.detail?' — '+r.detail:''):'FAILED — '+r.error)});
       if(!r.ok) break;
@@ -126,13 +140,25 @@ export async function runAgentLoop({cfg,key,goal,onEvent,signal}){
         snapshot=snap.snapshot; activeDocumentId=snap.documentId;
       } else {
         try{ const s2=await takeSnapshot(activeTabId); snapshot=s2.snapshot; activeDocumentId=s2.documentId; }
-        catch(e){ await syncOrigin(); history.push({role:'assistant',content:raw},{role:'user',content:'Post-action snapshot failed: '+e.message}); continue; }
+        catch(e){ await syncOrigin(); history.push({role:'assistant',content:raw},{role:'user',content:'Post-action snapshot failed: '+e.message+(stepShots.length?' A screenshot captured this step was also dropped; capture again once the page settles.':'')}); continue; }
       }
     }
     await syncOrigin();
     transcript.push('[step '+step+'] '+desc+'\n'+results.map(r=>'- '+r.tool+' '+(r.ref||'')+': '+(r.ok?'ok':'FAILED — '+r.error)).join('\n'));
     history.push({role:'assistant',content:raw});
-    history.push({role:'user',content:buildAgentObservation(snapshot,stepResults,tabRefs)});
+    let observation=buildAgentObservation(snapshot,stepResults,tabRefs);
+    if(stepShots.length&&switched){
+      // The capture predates the switch and shows the previous page; attaching it to this observation would misattribute it.
+      observation+='\nA screenshot captured before the tab switch was discarded (it showed the previous page). Capture again on the current page if you need it.';
+      history.push({role:'user',content:observation});
+    }else if(stepShots.length){
+      // Earlier step images are pruned so an eight-step run cannot stack captures past the request budget.
+      for(const m of history){ if(Array.isArray(m.content)){ const textPart=m.content.find(p=>p&&(p.type==='text'||p.type==='input_text')); m.content=(textPart?.text||'')+'\n[the screenshot from this earlier step is no longer attached; capture again if you need it]'; } }
+      observation+='\nA screenshot captured this step is attached to this message as image data.';
+      history.push({role:'user',content:cfg.format==='responses'
+        ?[{type:'input_text',text:observation},...stepShots.map(d=>({type:'input_image',image_url:d,detail:'auto'}))]
+        :[{type:'text',text:observation},...stepShots.map(d=>({type:'image_url',image_url:{url:d,detail:'auto'}}))]});
+    }else history.push({role:'user',content:observation});
     onEvent?.({type:'observation',step,text:'Page re-read: '+snapshot.text.length+' chars, '+(snapshot.fields?.length||0)+' fields.'});
   }
   return {done:false,transcript,steps:AGENT_MAX_STEPS,url:activeUrl,hitLimit:true};

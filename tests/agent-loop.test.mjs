@@ -6,8 +6,8 @@ const CFG={base:'https://api.test/v1',model:'m',format:'chat',temperature:'',max
 const fence=o=>'```orbit-actions\n'+JSON.stringify(o)+'\n```';
 
 // Drives runAgentLoop against a scripted Chrome, provider and confirm() so loop control flow is testable outside a browser.
-function harness({tabs,pageUrls,act,cancelAt=-1,throwOnAct=false,replies=[],tabUrls=[],snapshotFailsAfter=Infinity}){
-  const seen={confirms:[],act:[],snapshots:0,bodies:[],events:[]};
+function harness({tabs,pageUrls,act,cancelAt=-1,throwOnAct=false,replies=[],tabUrls=[],snapshotFailsAfter=Infinity,format='chat'}){
+  const seen={confirms:[],act:[],snapshots:0,bodies:[],events:[],captures:[]};
   let replyIndex=0,snapshotIndex=0,tabGetIndex=0;
   const originals={chrome:globalThis.chrome,location:globalThis.location,confirm:globalThis.confirm,fetch:globalThis.fetch};
   const page=i=>{const url=pageUrls[Math.min(i,pageUrls.length-1)];return {title:'Page '+url,url,text:'body text',token:'tk-'+url,fields:[{id:'0',label:'Query',kind:'input',length:0,value:''}],interactives:[{ref:'e0',role:'button',name:'Go'}]};};
@@ -20,7 +20,8 @@ function harness({tabs,pageUrls,act,cancelAt=-1,throwOnAct=false,replies=[],tabU
         // Chrome updates the tab record on navigation, so the mock does the same per call.
         if(!tabUrls.length) return {...t};
         return {...t,url:tabUrls[Math.min(tabGetIndex++,tabUrls.length-1)]};
-      }
+      },
+      async captureVisibleTab(windowId,opts){ seen.captures.push({windowId,opts}); return 'data:image/jpeg;base64,TESTSHOT'; }
     },
     scripting:{
       async executeScript({target,func,args}){
@@ -48,13 +49,13 @@ function harness({tabs,pageUrls,act,cancelAt=-1,throwOnAct=false,replies=[],tabU
   };
   return {
     seen,
-    run:()=>runAgentLoop({cfg:CFG,key:'k',goal:'do it',onEvent:e=>seen.events.push(e),signal:undefined}),
+    run:()=>runAgentLoop({cfg:{...CFG,format},key:'k',goal:'do it',onEvent:e=>seen.events.push(e),signal:undefined}),
     restore(){ for(const [k,v] of Object.entries(originals)){ if(v===undefined) delete globalThis[k]; else globalThis[k]=v; } }
   };
 }
 
-const TAB_A={id:7,url:'https://a.test/one',title:'A',active:true,lastAccessed:200};
-const TAB_B={id:8,url:'https://b.test/two',title:'B',active:false,lastAccessed:100};
+const TAB_A={id:7,url:'https://a.test/one',title:'A',active:true,lastAccessed:200,windowId:77};
+const TAB_B={id:8,url:'https://b.test/two',title:'B',active:false,lastAccessed:100,windowId:77};
 
 test('a malformed action block gets a free retry instead of consuming an agent step',async()=>{
   const h=harness({tabs:[TAB_A],pageUrls:['https://a.test/one'],replies:[
@@ -185,4 +186,103 @@ test('listTabs bounds the tab corpus and labels refs for the observation',()=>{
   assert.equal(out.length,15);
   assert.equal(out[0].ref,'tab0');
   assert.match(out[1].title,/T1/);
+});
+
+test('a screenshot action is gated, captured, and attached to the next observation',async()=>{
+  const h=harness({tabs:[TAB_A],pageUrls:['https://a.test/one'],replies:[
+    fence({actions:[{tool:'screenshot'}]}),
+    fence({actions:[{tool:'done',text:'I saw the image'}]})
+  ]});
+  try{
+    const res=await h.run();
+    assert.equal(res.done,true);
+    assert.equal(h.seen.captures.length,1);
+    assert.equal(h.seen.captures[0].windowId,77,'capture must target the active tab\'s window');
+    assert.equal(h.seen.captures[0].opts.quality,82);
+    assert.match(h.seen.confirms[0],/screenshot/,'a capture passes through the same approval gate as every action');
+    const last=h.seen.bodies.at(-1).messages.at(-1).content;
+    assert.ok(Array.isArray(last),'the observation after a capture must carry image parts');
+    assert.ok(last.some(p=>p.type==='text'&&/screenshot captured this step/.test(p.text)));
+    assert.deepEqual(last.filter(p=>p.type==='image_url').map(p=>p.image_url.url),['data:image/jpeg;base64,TESTSHOT']);
+    assert.equal(last.filter(p=>p.type==='image_url').length,1);
+  } finally { h.restore(); }
+});
+
+test('no capture is taken when the target tab is not the visible tab of its window',async()=>{
+  const h=harness({tabs:[TAB_A,TAB_B],pageUrls:['https://a.test/one','https://b.test/two'],replies:[
+    fence({actions:[{tool:'read-tab',ref:'tab1'}]}),
+    fence({actions:[{tool:'screenshot'}]}),
+    fence({actions:[{tool:'done',text:'ok'}]})
+  ]});
+  try{
+    const res=await h.run();
+    assert.equal(res.done,true);
+    assert.equal(h.seen.captures.length,0,'a background tab must not be captured as if it were visible');
+    assert.match(h.seen.bodies.at(-1).messages.at(-1).content,/not the visible tab/);
+  } finally { h.restore(); }
+});
+
+test('earlier step screenshots are pruned so the request stays within budget',async()=>{
+  const h=harness({tabs:[TAB_A],pageUrls:['https://a.test/one'],replies:[
+    fence({actions:[{tool:'screenshot'}]}),
+    fence({actions:[{tool:'screenshot'}]}),
+    fence({actions:[{tool:'done',text:'ok'}]})
+  ]});
+  try{
+    const res=await h.run();
+    assert.equal(res.done,true);
+    assert.equal(h.seen.captures.length,2);
+    const messages=h.seen.bodies.at(-1).messages;
+    const images=messages.flatMap(m=>Array.isArray(m.content)?m.content:[]).filter(p=>p.type==='image_url');
+    assert.equal(images.length,1,'only the latest capture rides along');
+    assert.ok(messages.some(m=>typeof m.content==='string'&&m.content.includes('no longer attached')),'the older image observation must degrade to a text note, not vanish');
+  } finally { h.restore(); }
+});
+
+test('a capture taken before a tab switch is discarded instead of misattributed to the new page',async()=>{
+  const h=harness({tabs:[TAB_A,TAB_B],pageUrls:['https://a.test/one','https://b.test/two'],replies:[
+    fence({actions:[{tool:'screenshot'},{tool:'read-tab',ref:'tab1'}]}),
+    fence({actions:[{tool:'done',text:'ok'}]})
+  ]});
+  try{
+    const res=await h.run();
+    assert.equal(res.done,true);
+    assert.equal(h.seen.captures.length,1,'the pre-switch capture did happen');
+    const messages=h.seen.bodies.at(-1).messages;
+    const images=messages.flatMap(m=>Array.isArray(m.content)?m.content:[]).filter(p=>p.type==='image_url'||p.type==='input_image');
+    assert.equal(images.length,0,'the old page\'s pixels must not ride on the new page\'s observation');
+    assert.ok(messages.some(m=>typeof m.content==='string'&&m.content.includes('discarded')),'the model must be told the capture was dropped');
+  } finally { h.restore(); }
+});
+
+test('a dropped capture is reported when the post-action re-snapshot fails',async()=>{
+  const h=harness({tabs:[TAB_A],pageUrls:['https://a.test/one'],snapshotFailsAfter:2,replies:[
+    fence({actions:[{tool:'click',ref:'e0'}]}),
+    fence({actions:[{tool:'screenshot'}]}),
+    fence({actions:[{tool:'done',text:'ok'}]})
+  ]});
+  try{
+    const res=await h.run();
+    assert.equal(res.done,true);
+    const last=h.seen.bodies.at(-1).messages;
+    const dropped=last.some(m=>typeof m.content==='string'&&m.content.includes('also dropped'));
+    assert.ok(dropped||h.seen.bodies.some(b=>b.messages.some(m=>typeof m.content==='string'&&m.content.includes('also dropped'))),
+      'the failure message must mention the dropped capture');
+  } finally { h.restore(); }
+});
+
+test('the responses format attaches the capture as input_image parts',async()=>{
+  const h=harness({tabs:[TAB_A],pageUrls:['https://a.test/one'],format:'responses',replies:[
+    fence({actions:[{tool:'screenshot'}]}),
+    fence({actions:[{tool:'done',text:'ok'}]})
+  ]});
+  try{
+    const res=await h.run();
+    assert.equal(res.done,true);
+    assert.ok(h.seen.bodies.at(-1).input,'responses-format requests carry the history under input');
+    const last=h.seen.bodies.at(-1).input.at(-1).content;
+    assert.ok(Array.isArray(last));
+    assert.ok(last.some(p=>p.type==='input_text'&&/screenshot captured this step/.test(p.text)));
+    assert.deepEqual(last.filter(p=>p.type==='input_image').map(p=>p.image_url),['data:image/jpeg;base64,TESTSHOT']);
+  } finally { h.restore(); }
 });

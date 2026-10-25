@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AGENT_MAX_STEPS,AGENT_TOOLS,parseAgentActions,validateAgentAction,stripAgentFence,describeActions,buildAgentObservation,extractFencedJson} from '../dist/agent.js';
+import {AGENT_MAX_STEPS,AGENT_TOOLS,parseAgentActions,validateAgentAction,stripAgentFence,describeActions,buildAgentObservation,buildAgentSystemPrompt,extractFencedJson} from '../dist/agent.js';
 import {requestAgentBody,generateOnce} from '../dist/core.js';
 
 test('parses orbit-actions fence',()=>{ const r=parseAgentActions('hi\n```orbit-actions\n{"actions":[{"tool":"click","ref":"e1"}]}\n```'); assert.equal(r.actions[0].tool,'click'); });
@@ -60,6 +60,15 @@ test('read-tab validated against tab refs from the observation',()=>{
   assert.match(validateAgentAction({tool:'read-tab'}),/Open tabs/);
   assert.match(validateAgentAction({tool:'read-tab',ref:'tab2',text:'x'}),/takes no text/);
   assert.match(describeActions([{tool:'read-tab',ref:'tab1'}]),/switch to open tab/);
+});
+test('screenshot validates as a ref-less capture tool',()=>{
+  assert.ok(AGENT_TOOLS.includes('screenshot'));
+  assert.equal(validateAgentAction({tool:'screenshot'}),null);
+  assert.match(validateAgentAction({tool:'screenshot',ref:'e1'}),/takes no ref/);
+  assert.match(validateAgentAction({tool:'screenshot',text:'x'}),/takes no text/);
+  assert.match(describeActions([{tool:'screenshot'}]),/capture the visible page/);
+  assert.match(buildAgentSystemPrompt(),/- screenshot:/);
+  assert.match(buildAgentSystemPrompt(),/vision-capable/);
 });
 test('observation lists open tabs inside the untrusted wrapper',()=>{
   const o=buildAgentObservation({title:'T',url:'https://a.test/',text:'x'},[],[{ref:'tab0',id:1,title:'Search results',url:'https://s.test/?q=1'},{ref:'tab1',id:2,title:'Docs',url:'https://d.test/guide'}]);

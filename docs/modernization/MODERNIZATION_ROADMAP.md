@@ -1,4 +1,4 @@
-# Modernization Roadmap — after cycle 2 (2026-10-25)
+# Modernization Roadmap — after cycle 3 (2026-10-26)
 
 Legend: done ✓ | next | later | rejected (reason)
 
@@ -6,6 +6,7 @@ Legend: done ✓ | next | later | rejected (reason)
 - (none open)
 
 ## P1 — High impact
+- ✓ FEAT-001 (cycle 3, v2.4.0) active-tab screenshot & analysis: one-click **Analyze now** on the reviewed screenshot in chat, plus an agent `screenshot` tool that attaches the visible page as vision content behind the per-step gate; refuses to capture a non-visible tab, bounds step captures (2 / ~3 MB) and prunes earlier images. Verified by 5 fail-first tests (110 Node); live-Chrome behavior routed to MANUAL-QA 31–35.
 - ✓ SEC-001 approval dialog could name the wrong site after a navigation (informed-consent defect in the core safety gate)
 - ✓ SEC-002 mid-batch `read-tab` let stale refs act on the newly focused tab
 - ✓ REL-001 `init()` could blank the panel on a storage failure and then overwrite unreadable data

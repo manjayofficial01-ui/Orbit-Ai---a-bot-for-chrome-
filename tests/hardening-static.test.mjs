@@ -101,3 +101,19 @@ test('welcome-screen claims stay anchored to capabilities that exist in code',()
   assert.match(agentRun,/const ok=confirm\(/,'the per-action approval claim requires the confirm() gate');
   assert.doesNotMatch(app,/free unlimited|unlimited credits|no limits/i,'no claim may promise unlimited anything');
 });
+
+test('one-click screenshot analysis reuses the reviewed capture and cannot bypass it',()=>{
+  assert.match(app,/\$\('analyzeShot'\)\.hidden=!shot;/,'Analyze now must appear only for screenshot references');
+  assert.match(app,/\$\('attach'\)\.classList\.toggle\('primary',!shot\);/);
+  assert.match(app,/\$\('analyzeShot'\)\.onclick=safe\(async\(\)=>\{if\(busy\)return;if\(!preview\|\|preview\.kind!=='screenshot'\)return;/,
+    'Analyze now may only act on a preview opened through the review dialog');
+  assert.match(app,/pending\.push\(ref\);renderAttachments\(\);if\(!\$\('prompt'\)\.value\.trim\(\)\)\$\('prompt'\)\.value='Analyze this screenshot\./,
+    'the one-click flow must attach the reviewed screenshot and send through the normal send() path');
+  assert.match(app,/if\(!\$\('prompt'\)\.value\.trim\(\)\)\$\('prompt'\)\.value='Analyze this screenshot\./,
+    'a typed draft must not be overwritten by the canned analysis prompt');
+  // The analyze handler must not capture anything itself; capture happens behind the preview dialog.
+  const handler=/\$\('analyzeShot'\)\.onclick=safe\([\s\S]*?\}\);/.exec(app)?.[0]||'';
+  assert.ok(handler.length>0,'the analyze handler must exist');
+  assert.doesNotMatch(handler,/captureActiveScreenshot/,'Analyze now must reuse the reviewed capture, not take a new one');
+  assert.doesNotMatch(handler,/dataUrl\s*=/,'the handler must not fabricate image data');
+});

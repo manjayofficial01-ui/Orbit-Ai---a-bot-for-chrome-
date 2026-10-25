@@ -63,3 +63,11 @@ Record Chrome version, OS, endpoint, model, API format, date and observed result
 28. URL fetch bound: fetch a very large plain-text URL and confirm the 2 MB cap reports itself rather than the tab ballooning first.
 29. Welcome strip: verify the four differentiator pills render in both themes, at Small and Extra large, and make no claim the app cannot honor.
 30. Malformed-block budget: with a model that emits invalid action JSON, confirm the run still completes rather than burning steps, and stops cleanly once retries are exhausted.
+
+## Modernization cycle 3 — v2.4.0 screenshot & analyze (added 2026-10-26; NOT executed in this environment)
+
+31. One-click analyze (chat): on a normal page, click the Screenshot toolbar button, then click **Analyze now** in the preview dialog. The screenshot must attach and send immediately with the built-in analysis prompt; with a vision model the answer must describe the page actually visible. With a text-only model, expect the provider's error to surface honestly (no fabricated analysis).
+32. Analyze now must reuse the reviewed capture: open the preview, wait a moment (let the page change), then click Analyze now — the sent image must be the one shown in the preview, not a fresh capture.
+33. Agent screenshot: run Agent mode with a vision model and ask it to "take a screenshot and describe what you see". The step approval dialog must describe the screenshot action before any capture; after approval the model's next turn must receive the image (its answer should reference visible layout/colors, not just DOM text).
+34. Non-visible tab guard: use `read-tab` to move the agent to a background tab, then have it propose a screenshot. The capture must be refused with "not the visible tab of its window" instead of capturing whatever page is actually in front of you.
+35. Image budget: have the agent screenshot in two consecutive steps. The second request must carry only the latest capture (the first degrades to a text note) — verify in the provider request or by the model's behavior.

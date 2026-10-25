@@ -2,7 +2,7 @@ export const AGENT_MAX_STEPS = 8;
 export const AGENT_PROTOCOL_RETRIES = 2;
 export const AGENT_SNAPSHOT_TEXT_BUDGET = 12000;
 export const AGENT_ACTION_TEXT_BUDGET = 50000;
-export const AGENT_TOOLS = ['snapshot','click','fill','type','select','scroll','focus','hover','press','wait','extract','read-tab','done'];
+export const AGENT_TOOLS = ['snapshot','screenshot','click','fill','type','select','scroll','focus','hover','press','wait','extract','read-tab','done'];
 export const AGENT_KEYS = ['Tab','Escape','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'];
 
 export function buildAgentSystemPrompt(){
@@ -19,8 +19,9 @@ export function buildAgentSystemPrompt(){
     '```orbit-actions',
     '{"actions":[{"tool":"click","ref":"12"}]}',
     '```',
-    'Valid tools: snapshot, click, fill, type, select, scroll, focus, hover, press, wait, extract, read-tab, done.',
+    'Valid tools: snapshot, screenshot, click, fill, type, select, scroll, focus, hover, press, wait, extract, read-tab, done.',
     '- snapshot: re-read page (no ref).',
+    '- screenshot: capture the visible target page; the image is attached to your next observation (no ref). Use it when text cannot answer: layouts, images, charts, or visually verifying a result. Only useful with a vision-capable model.',
     '- click/focus: {"tool":"click","ref":"12"}.',
     '- hover: open menus and tooltips: {"tool":"hover","ref":"12"}.',
     '- press: {"tool":"press","ref":"12","text":"ArrowDown"} — only Tab, Escape and the four Arrow keys; Enter is never pressed.',
@@ -85,6 +86,11 @@ export function validateAgentAction(a){
     return null;
   }
   if(tool==='snapshot'||tool==='extract') return null;
+  if(tool==='screenshot'){
+    if(ref!==undefined) return 'screenshot takes no ref.';
+    if(text!==undefined) return 'screenshot takes no text.';
+    return null;
+  }
   if(tool==='wait'){
     if(ref!==undefined) return 'wait takes no ref.';
     if(text===undefined) return null;
@@ -143,6 +149,7 @@ export function describeActions(actions){
   return (actions||[]).map(a=>{
     if(a.tool==='done') return 'done: '+String(a.text||'').slice(0,200);
     if(a.tool==='snapshot') return 'snapshot (re-read page)';
+    if(a.tool==='screenshot') return 'screenshot (capture the visible page as an image for you)';
     if(a.tool==='extract') return 'extract structured outline';
     if(a.tool==='wait') return 'wait '+String(a.text||'300')+' ms';
     if(a.tool==='press') return 'press '+String(a.text||'')+' on ['+a.ref+']';

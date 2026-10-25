@@ -1,5 +1,21 @@
 # Modernization Changelog
 
+## Cycle 3 — 2026-10-26 — feature: active-tab screenshot & analysis — v2.4.0 — branch `modernization/2026-10-25-c2`
+
+Scope: "take a screenshot and analyze the active browser tab" as a first-class capability. Cycle 2's audit had noted `captureVisibleTab` was never verified end-to-end and the agent was text-only; this cycle closes both gaps.
+
+### User-visible features
+- **Analyze now** in the screenshot preview dialog: one click attaches the reviewed screenshot and immediately sends it with a built-in analysis prompt ("describe what the page shows, its purpose and main content, and anything unusual or worth acting on"). The button reuses the capture you previewed — it never takes a new one — and is hidden for text references.
+- **Agent `screenshot` tool**: the supervised agent can now propose capturing the visible target page. The image is attached to its next observation as vision content (both Chat Completions `image_url` and Responses `input_image` shapes), behind the same per-step confirm() gate as every other action.
+- Safety/budget behavior: a capture is refused when the target tab is not the visible tab of its window (e.g. after a background `read-tab` switch) instead of silently capturing the wrong page; at most two captures (~3 MB) attach per step; earlier steps' images are pruned to a text note so an 8-step run cannot stack captures past the 5 MB request budget.
+
+### Internal / verification
+- Tests 105 → **113 Node** (0 fail), Python 12 unchanged; `npm run check` exit 0; src↔dist parity 13/13 byte-identical; no new permissions, dependencies, or manifest surface beyond a version bump to 2.4.0.
+- All 8 new tests (5 feature + 3 remediation) demonstrated fail-first against the pre-change sources, then pass.
+- Independent review (fresh subagent, diff + criteria + commands only): **PASS-WITH-NOTES**, four Low findings — all fixed in-cycle: a pre-switch capture in a `[screenshot, read-tab]` batch is now discarded with an explicit note instead of misattributed to the new page; a capture dropped by a failed re-snapshot is now reported to the model; Analyze now no longer overwrites a typed draft (canned prompt only when the composer is empty); the Responses-format image path now has a test (`input_image` parts asserted).
+- Docs updated: README (features + limits), SECURITY.md (tool surface 13 → 14, new capture path), MANUAL-QA 31–35, roadmap, validation, test results.
+- Still not verified in a real Chrome: live `captureVisibleTab` pixels, the permission prompt flow, and provider vision round-trips — MANUAL-QA 31–35 is the verification path.
+
 ## Cycle 2 — 2026-10-25 — profile: Full Modernization — branch `modernization/2026-10-25-c2`
 
 Scope: the v2.2/v2.3 delta (≈700 lines of new agent/page code) had never been audited and its loop had no tests. Cycle 2 audited it, fixed every confirmed defect, added a browser-execution verification path that cycle 1 recorded as impossible, and corrected the two competitor claims that had gone stale within the same day.

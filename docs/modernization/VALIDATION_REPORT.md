@@ -1,3 +1,42 @@
+# Validation Report — cycle 3 — 2026-10-26 — feature: active-tab screenshot & analysis (v2.4.0)
+
+## Baseline / after metrics (real commands, this machine, this branch `modernization/2026-10-25-c2`)
+
+Baseline = commit `7cd57a5` (cycle 2, as committed); after = the v2.4.0 feature tree.
+
+| Metric | Command | Baseline (7cd57a5) | After (v2.4.0) |
+|---|---|---|---|
+| Build | `npm run build` | ✅ exit 0 | ✅ exit 0 |
+| Static/syntax checks | `npm run check` | ✅ exit 0 | ✅ exit 0 |
+| Node unit tests | `npm run test:extension` | **105 pass / 0 fail** | **113 pass / 0 fail** |
+| Python bridge tests | `python -m unittest discover -s native-host/tests` | 12 pass / 0 fail | 12 pass / 0 fail |
+| src↔dist parity | `cmp` over all 13 built artifacts | 13/13 identical | **13/13 byte-identical** |
+| Dependency vulns | `npm audit` | N/A — zero deps (ENOLOCK) | N/A — unchanged, nothing added |
+| Secrets scan | grep `sk-`/`AKIA`/`ghp_`/`xoxb-`/`BEGIN … PRIVATE KEY` over src, dist, native-host, scripts, tests, docs, README | clean | clean (re-run after all changes) |
+| Bundle size | `du -sb dist` | 335,756 B | 339,202 B (**+1.03%**) |
+| JS total | `git show HEAD:dist/*.js \| wc -c` vs `cat dist/*.js \| wc -c` | 117,435 B | 121,393 B (+3.4%) |
+| Manifest permissions | `src/manifest.json` | 7 permissions + optional hosts | **unchanged** (version 2.3.0 → 2.4.0 only) |
+| New tests fail-first | run new tests against pre-change sources | 4/4 agent-loop+agent tests failed; 1/1 hardening gate failed | all pass |
+
+## Independent review (cycle 3)
+
+A fresh reviewer subagent (separate context, given only the diff, acceptance criteria and commands — not the implementation summary) re-ran every check itself (check exit 0; 110 tests at the time; 12 Python; 13/13 parity via `cmp`; fail-first independently reproduced from a `git archive` of the base commit; manifest diff = version string only) and returned **PASS-WITH-NOTES** with four Low findings, all fixed in the same cycle:
+
+1. `[screenshot, read-tab]` in one batch attached the pre-switch tab's image to the post-switch observation → a switch now discards the capture with an explicit note (2 loop tests fail-first).
+2. A capture was silently dropped when the post-action re-snapshot failed → the failure message now says so (loop test fail-first).
+3. Analyze now overwrote a typed draft → the canned prompt is only applied when the composer is empty (updated hardening gate fails on the pre-fix line).
+4. The `responses`-format image path had no test → the harness is format-parameterized and asserts `input_image` parts (loop test).
+
+Final suite after remediation: **113 Node / 0 fail**, 12 Python, check exit 0, parity 13/13.
+
+## Verification method
+
+- The 5 new tests were run against the pre-change sources (`git show HEAD:src/agent.js`/`agent-run.js` written into `dist/`; `git show HEAD:src/app.js` swapped in for the static gate), where **all 5 failed**, then against the changed sources, where **all pass**. That pair is the evidence the tests detect the feature rather than agree with the code.
+- Behavioral coverage: capture passes the approval gate, targets the active tab's window, and arrives as a well-formed `image_url` part on the next observation (Chat Completions shape); a background-tab target refuses capture; consecutive screenshot steps prune earlier images to a text note.
+- **Not verified here (same limits as cycle 2):** real `captureVisibleTab` pixels, Chrome permission prompts, a live provider accepting the vision parts, and the rendered Analyze-now dialog — MANUAL-QA 31–35 is the verification path. The vision-content shapes mirror `buildMessages()` in `app.js`, which the cycle-2 browser harness exercised for the manual screenshot path.
+
+---
+
 # Validation Report — cycle 2 — 2026-10-25 — profile: Full Modernization
 
 ## Baseline / after metrics (real commands, this machine, this branch)
