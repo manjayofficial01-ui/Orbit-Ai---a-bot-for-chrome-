@@ -12,7 +12,7 @@ let state={chats:[],current:'',provider:'openai',profiles:{},theme:'system',font
 let ui={navHidden:false,sidebarWidth:272,composerExpanded:false};
 const config=()=>({...defaults,...state.profiles[state.provider]});
 const current=()=>state.chats.find(x=>x.id===state.current);
-const isLoopback=base=>['localhost','127.0.0.1','[::1]'].includes(new URL(base).hostname);
+const isLoopback=base=>['localhost','127.0.0.1'].includes(new URL(base).hostname);
 function keyFor(base){try{return keys[normalizeBase(base)]||keys[base]||'';}catch{return keys[base]||'';}}
 function status(text){$('status').textContent=text||'';}
 function safe(fn){return async(...args)=>{try{return await fn(...args);}catch(e){status(e.message);if($('settingsDialog')?.open)$('settingsStatus').textContent=e.message;}};}

@@ -41,7 +41,7 @@
     }
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'; img-src 'self' data:; connect-src https: http://localhost:* http://127.0.0.1:* http://[::1];"
+    "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'; img-src 'self' data:; connect-src https: http://localhost:* http://127.0.0.1:*;"
   },
   "icons": {
     "16": "icon-16.png",

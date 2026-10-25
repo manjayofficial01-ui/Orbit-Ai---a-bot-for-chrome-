@@ -1,7 +1,8 @@
 export function normalizeBase(value) {
  const u=new URL(value.trim());
+ if(u.hostname==='[::1]') throw Error('Use http://localhost instead of the literal [::1] address; localhost reaches both IPv4 and IPv6 loopback and is allowed by the extension security policy.');
  if(u.username||u.password||u.search||u.hash) throw Error('Base URL cannot contain credentials, query parameters or fragments.');
- if(u.protocol!=='https:' && !(u.protocol==='http:'&&['localhost','127.0.0.1','[::1]'].includes(u.hostname))) throw Error('Use HTTPS, or HTTP on a loopback server.');
+ if(u.protocol!=='https:' && !(u.protocol==='http:'&&['localhost','127.0.0.1'].includes(u.hostname))) throw Error('Use HTTPS, or HTTP on a loopback server.');
  return u.href.replace(/\/+$/,'');
 }
 export function hostPattern(base){const u=new URL(normalizeBase(base));return `${u.protocol}//${u.hostname}/*`;}
