@@ -101,8 +101,16 @@ export async function openPageTools(onReference){
    if(!res.ok)throw Error('Fetch returned HTTP '+res.status+'.');
    const type=res.headers.get('content-type')||'';
    if(type&&!/text\/|json|xml|javascript/i.test(type))throw Error('Not a text page (content-type '+type.split(';')[0]+'); nothing was attached.');
-   const body=await res.text();
-   if(body.length>2000000)throw Error('Page exceeds the 2 MB fetch limit.');
+   const reader=res.body?.getReader();
+   if(!reader)throw Error('The response had no readable body.');
+   let n=0;const parts=[];
+   try{ while(true){ const {done,value}=await reader.read(); if(done)break; n+=value.length; if(n>2000000)throw Error('Page exceeds the 2 MB fetch limit; nothing was attached.'); parts.push(value); } }
+   finally{ try{ await reader.cancel(); }catch{} }
+   const bytes=new Uint8Array(n);let off=0;for(const p of parts){bytes.set(p,off);off+=p.length;}
+   const label=(/charset=["']?([\w-]+)/i.exec(type)?.[1]||'utf-8').toLowerCase();
+   let body;
+   try{ body=new TextDecoder(/^[a-z0-9_-]+$/.test(label)?label:'utf-8',{fatal:false}).decode(bytes); }
+   catch{ body=new TextDecoder('utf-8',{fatal:false}).decode(bytes); }
    let text=body,title=u.hostname;
    if(/html/i.test(type)||/^\s*<(!doctype|html)/i.test(body)){
      const doc=new DOMParser().parseFromString(body,'text/html');
@@ -329,12 +337,16 @@ export async function agentAct(token,action,expectedURL){
 }
 export function digestScan(){
   let text='';
+  // display/visibility are layout-independent: a background tab may never have painted, so no layout-dependent check (getClientRects) is usable here.
+  // display:none is not inherited into the computed style of a descendant, so an ancestor climb is required to catch CSS-hidden wrappers.
+  const hiddenByStyle=el=>{for(let a=el;a&&a!==document.documentElement;a=a.parentElement){const s=getComputedStyle(a);if(s.display==='none'||s.visibility==='hidden'||s.contentVisibility==='hidden')return true;}return false;};
   if(document.body){
     const walk=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
     let n;
     while((n=walk.nextNode())&&text.length<2000){
       const p=n.parentElement;
-      if(!p||p.closest('script,style,noscript,input,textarea,select,button'))continue;
+      if(!p||p.closest('script,style,noscript,input,textarea,select,button,[contenteditable],[hidden],[aria-hidden="true"]'))continue;
+      if(hiddenByStyle(p))continue;
       const v=n.textContent.trim();
       if(v)text+=v+' ';
     }

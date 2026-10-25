@@ -4,6 +4,18 @@ An independently branded, Grok-inspired, bring-your-own-provider Chrome AI assis
 
 This is a fresh reconstruction from the requirements and partial diffs pasted into the conversation, not a recovered copy of the inaccessible previous project. Prior chat data and credentials are NOT included. No false claim is made that the old application's unseen implementation or browser tests were preserved.
 
+## What this is for
+
+Most browser AI assistants meter you with expiring credits, lock you to one vendor's models, or collect page content in the background. Orbit is the opposite shape, and these are the properties that matter when comparing it:
+
+- **Bring your own key, any OpenAI-compatible endpoint over HTTPS** — OpenAI, xAI, OpenRouter, a custom gateway, or a local Ollama server. Plain HTTP is accepted only for `localhost` / `127.0.0.1`, so a LAN IP endpoint is not allowed. No credits, no quota that Orbit controls, no account.
+- **Local models first-class** — point it at `http://localhost:11434/v1` and nothing leaves the machine.
+- **Supervised automation** — Agent mode proposes at most 3 page actions per step and *every* step needs your explicit approval; `press` is limited to non-activating keys. Orbit never submits a form on its own initiative — a submit-capable button or link is only touched if you approve that exact step, and the approval dialog names the site it will happen on. Reach research gates each network call the same way.
+- **Zero telemetry** — no analytics, no Orbit server, no content script running until you grant a site. The `dist/` tree is auditable and there are no third-party dependencies.
+- **Open source (MIT)** — read every line before you load it.
+
+Provider inference is still billed by your provider, and the same page content you attach is still sent to that provider. Those trade-offs are spelled out in [docs/SECURITY.md](docs/SECURITY.md).
+
 ## Install (no build required)
 1. Extract this ZIP into a permanent folder.
 2. Open chrome://extensions in Chrome 116 or newer.
@@ -72,6 +84,8 @@ Page text is not collected at startup or during navigation. With Smart page cont
 
 Provider requests include your message, retained eligible conversation turns, attached references, custom instructions and memory notes. Page URLs can contain secrets; review them. Extraction skips common form/editable/navigation/hidden elements but cannot guarantee redaction. Untrusted references can contain prompt injection.
 
+Orbit declares the `tabs` permission so the all-tabs digest and Agent-mode tab switching can list each open tab's title and URL. That is metadata, not page text: a tab's content is read only after you grant that origin. Tab titles can themselves be sensitive (search terms, document names, mail subjects), and the digest arrives as one combined preview — review it before attaching, because it can gather material from sites you did not mean to include.
+
 Keys live in chrome.storage.local and persist across browser restarts. They are not encrypted vault entries; someone controlling the browser profile or computer can access them. Settings and conversation history are also in chrome.storage.local; the app does not encrypt them. API keys are not intentionally included in exports. Secrets typed into normal messages are ordinary message data.
 
 History saving is controlled by the active provider profile's Save conversations setting. Turning it off removes saved chat data on the next save but keeps this workspace's chats in memory until closed. Memory notes/custom instructions remain saved separately in provider profiles until cleared. Delete all local data clears those as well and revokes optional provider grants; it cannot delete provider-side records.
@@ -82,6 +96,7 @@ History saving is controlled by the active provider profile's Save conversations
 - At most 3 references; text references are capped at 24,000 characters, screenshots at roughly 3.5 MB data URL, and text files under 100 KB.
 - 250,000-character generated output cap and five-minute request timeout.
 - Research with Reach: at most four proposed search/read calls per run (declined and unsupported proposals count toward the budget), a 20-second bridge timeout for capability reads and 90 seconds per search/read call, at most 10 items and 12,000 characters of text per item from the bridge, one corrective re-prompt if the model's first planning reply is prose instead of a directive, and a ten-minute overall research cap.
+- Agent mode: at most 8 steps and 3 actions per step, with an approval dialog before each step. A malformed action block gets two free corrective retries before it starts consuming steps. A `read-tab` switch ends that step, so refs from the previous page are never reinterpreted against the newly focused tab. The all-tabs digest reads at most 12 tabs into a single 24,000-character reference; a direct URL fetch is capped at 2 MB while downloading.
 - Partial answers checkpoint approximately every 1.5 seconds; closed/reloaded requests are interrupted, not resumable. Recent unsaved text can be lost.
 - Failed/interrupted assistant turns are not sent on subsequent requests. Related user turns remain.
 - Closing the active workspace ends generation. The background service worker does not run generation jobs.

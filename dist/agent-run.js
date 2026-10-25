@@ -1,6 +1,6 @@
 import {pageOrigin,targetTabs,snapshotPage,agentAct} from './page-access.js';
 import {generateOnce} from './core.js';
-import {AGENT_MAX_STEPS,buildAgentSystemPrompt,buildAgentObservation,parseAgentActions,stripAgentFence,describeActions} from './agent.js';
+import {AGENT_MAX_STEPS,AGENT_PROTOCOL_RETRIES,buildAgentSystemPrompt,buildAgentObservation,parseAgentActions,stripAgentFence,describeActions} from './agent.js';
 
 export async function resolveAgentTarget(){
   const active=await chrome.tabs.query({active:true,lastFocusedWindow:true});
@@ -21,8 +21,11 @@ export async function takeSnapshot(tabId){
 
 export async function execAction(tabId,documentId,snapshot,action){
   if(action.tool==='snapshot') return {tool:'snapshot',ok:true,detail:'re-read'};
-  const result=await chrome.scripting.executeScript({target:{tabId,documentIds:[documentId]},func:agentAct,args:[snapshot.token,action,action.tool==='done'?undefined:snapshot.url]});
-  const out=result[0]?.result||{ok:false,error:'No result from page.'};
+  let result;
+  try{
+    result=await chrome.scripting.executeScript({target:{tabId,documentIds:[documentId]},func:agentAct,args:[snapshot.token,action,action.tool==='done'?undefined:snapshot.url]});
+  }catch(e){ return {tool:action.tool,ref:action.ref,ok:false,error:'The page could not be acted on ('+String(e&&e.message||e).slice(0,200)+'). Snapshot or read a tab again.'}; }
+  const out=result?.[0]?.result||{ok:false,error:'No result from page.'};
   return {tool:action.tool,ref:action.ref,ok:!!out.ok,error:out.error,detail:out.detail};
 }
 
@@ -60,13 +63,15 @@ export async function runAgentLoop({cfg,key,goal,onEvent,signal}){
     if(!granted) return {tool:'read-tab',ref,ok:false,error:'Site access for '+new URL(target.url).hostname+' was not granted; the tab was not read.'};
     try{
       const next=await takeSnapshot(target.id);
-      activeTabId=target.id; snapshot=next.snapshot; activeDocumentId=next.documentId; activeUrl=target.url;
+      activeTabId=target.id; snapshot=next.snapshot; activeDocumentId=next.documentId; activeUrl=snapshot.url||target.url;
     }catch(e){ return {tool:'read-tab',ref,ok:false,error:e.message}; }
     return {tool:'read-tab',ref,ok:true,detail:'now reading '+String(target.title||new URL(target.url).hostname).slice(0,120)};
   };
+  const syncOrigin=async()=>{ try{ const t=await chrome.tabs.get(activeTabId); if(t?.url) activeUrl=t.url; }catch{} };
   const history=[{role:'system',content:buildAgentSystemPrompt()},{role:'user',content:'Goal: '+String(goal||'').slice(0,4000)+'\n'+buildAgentObservation(snapshot,[],tabRefs)}];
   const transcript=[];
   let stepResults=[];
+  let protocolRetries=0;
   for(let step=1;step<=AGENT_MAX_STEPS;step++){
     signal?.throwIfAborted?.();
     onEvent?.({type:'step',step,text:'Thinking (step '+step+' of '+AGENT_MAX_STEPS+')…'});
@@ -76,6 +81,8 @@ export async function runAgentLoop({cfg,key,goal,onEvent,signal}){
     if(parsed.error){
       history.push({role:'assistant',content:raw},{role:'user',content:'Your action block was invalid: '+parsed.error+' Reply with a corrected block or plain-text question.'});
       onEvent?.({type:'invalid',step,text:parsed.error});
+      // A malformed block is a formatting failure, not page work: it must not consume one of the eight action steps.
+      if(protocolRetries<AGENT_PROTOCOL_RETRIES){ protocolRetries++; step--; }
       continue;
     }
     if(!parsed.actions){
@@ -105,6 +112,11 @@ export async function runAgentLoop({cfg,key,goal,onEvent,signal}){
       results.push(r);
       onEvent?.({type:'action',step,text:r.tool+' '+(r.ref||'')+': '+(r.ok?'ok'+(r.detail?' — '+r.detail:''):'FAILED — '+r.error)});
       if(!r.ok) break;
+      if(a.tool==='read-tab'&&r.ok&&r.detail!=='already reading this tab'){
+        const left=parsed.actions.length-results.length;
+        if(left) results.push({tool:'deferred',ref:'',ok:false,error:'The tab switch ended this step. The '+left+' remaining action(s) were not run: their refs belong to the previous page and do not exist here. Re-propose them against the new snapshot.'});
+        break;
+      }
     }
     stepResults=results;
     const switched=results.some(r=>r.tool==='read-tab'&&r.ok&&r.detail!=='already reading this tab');
@@ -114,9 +126,10 @@ export async function runAgentLoop({cfg,key,goal,onEvent,signal}){
         snapshot=snap.snapshot; activeDocumentId=snap.documentId;
       } else {
         try{ const s2=await takeSnapshot(activeTabId); snapshot=s2.snapshot; activeDocumentId=s2.documentId; }
-        catch(e){ history.push({role:'assistant',content:raw},{role:'user',content:'Post-action snapshot failed: '+e.message}); continue; }
+        catch(e){ await syncOrigin(); history.push({role:'assistant',content:raw},{role:'user',content:'Post-action snapshot failed: '+e.message}); continue; }
       }
     }
+    await syncOrigin();
     transcript.push('[step '+step+'] '+desc+'\n'+results.map(r=>'- '+r.tool+' '+(r.ref||'')+': '+(r.ok?'ok':'FAILED — '+r.error)).join('\n'));
     history.push({role:'assistant',content:raw});
     history.push({role:'user',content:buildAgentObservation(snapshot,stepResults,tabRefs)});

@@ -51,3 +51,15 @@ Record Chrome version, OS, endpoint, model, API format, date and observed result
 19. Snapshot richness: dropdowns list their options, text fields show a short current value, links show target hrefs, and controls inside shadow DOM (custom elements) are discovered up to depth 3.
 20. Click robustness: a click covered by an overlay fails with "Covered by …" instead of clicking through; a target whose label changed since the snapshot is refused; pages get a mutation-quiet settle before re-snapshot.
 21. Page tools → Attach digest of all tabs: one permission prompt lists every open site; the digest reads each granted tab's text into a single bounded reference (title + URL + ≤1800 chars each, 24,000 total).
+
+## Modernization cycle 2 (added 2026-10-25; NOT executed in this environment)
+
+22. Assistive technology: start a streamed answer with a screen reader active. The conversation region must not re-announce the entire thread on each repaint; the status line should still announce "Connecting…", "Generating…" and "Done.". Verify at desktop width and 375 px.
+23. Approval-origin honesty: with the agent on a page that links to a different site, approve a `click` that navigates. The next step's confirm dialog must name the site the page is now on, not the original one.
+24. Tab-switch safety: prompt the agent to switch tabs and click in the same step. Only the switch may execute; the activity log must show the remaining action was deferred, and the next observation must tell the model to re-propose against the new snapshot.
+25. Boot degradation: if storage is unavailable (or `setAccessLevel` is missing on an older Chrome), the panel must still render and show a readable warning, and must not overwrite stored chats/settings. Confirm existing data survives a reload.
+26. All-tabs digest privacy filtering: open a page with `display:none` / `[hidden]` text, run "Attach digest of all tabs", and confirm hidden text is absent from the preview while visible text is present. **Behavior change to confirm:** the digest now also skips `[contenteditable]` regions, matching the other extractors — verify on a document-editor tab (Google Docs, Notion, web mail compose) whether returning little or no text is acceptable, or whether editable surfaces should be re-included for read-only digest use.
+27. Digest gesture check: on a Chrome build that enforces user-activation for `permissions.request`, confirm the multi-origin digest prompt actually appears (this path awaits a tab query before requesting).
+28. URL fetch bound: fetch a very large plain-text URL and confirm the 2 MB cap reports itself rather than the tab ballooning first.
+29. Welcome strip: verify the four differentiator pills render in both themes, at Small and Extra large, and make no claim the app cannot honor.
+30. Malformed-block budget: with a model that emits invalid action JSON, confirm the run still completes rather than burning steps, and stops cleanly once retries are exhausted.

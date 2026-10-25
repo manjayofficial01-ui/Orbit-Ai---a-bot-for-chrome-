@@ -1,0 +1,188 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {runAgentLoop,execAction,listTabs} from '../dist/agent-run.js';
+
+const CFG={base:'https://api.test/v1',model:'m',format:'chat',temperature:'',maxTokens:'',tokenField:'max_completion_tokens',effort:'',search:false};
+const fence=o=>'```orbit-actions\n'+JSON.stringify(o)+'\n```';
+
+// Drives runAgentLoop against a scripted Chrome, provider and confirm() so loop control flow is testable outside a browser.
+function harness({tabs,pageUrls,act,cancelAt=-1,throwOnAct=false,replies=[],tabUrls=[],snapshotFailsAfter=Infinity}){
+  const seen={confirms:[],act:[],snapshots:0,bodies:[],events:[]};
+  let replyIndex=0,snapshotIndex=0,tabGetIndex=0;
+  const originals={chrome:globalThis.chrome,location:globalThis.location,confirm:globalThis.confirm,fetch:globalThis.fetch};
+  const page=i=>{const url=pageUrls[Math.min(i,pageUrls.length-1)];return {title:'Page '+url,url,text:'body text',token:'tk-'+url,fields:[{id:'0',label:'Query',kind:'input',length:0,value:''}],interactives:[{ref:'e0',role:'button',name:'Go'}]};};
+  globalThis.location={href:'chrome-extension://test/index.html'};
+  globalThis.chrome={
+    tabs:{
+      async query(q){ if(q&&q.active) return tabs.filter(t=>t.active); return tabs.map(t=>({...t})); },
+      async get(id){
+        const t=tabs.find(x=>x.id===id); if(!t) throw Error('No tab with id: '+id);
+        // Chrome updates the tab record on navigation, so the mock does the same per call.
+        if(!tabUrls.length) return {...t};
+        return {...t,url:tabUrls[Math.min(tabGetIndex++,tabUrls.length-1)]};
+      }
+    },
+    scripting:{
+      async executeScript({target,func,args}){
+        if(func.name==='snapshotPage'){
+          if(seen.snapshots>=snapshotFailsAfter) throw Error('Cannot access a chrome:// URL');
+          seen.snapshots++; return [{result:page(seen.snapshots-1),documentId:'doc-'+target.tabId}];
+        }
+        if(func.name==='agentAct'){
+          seen.act.push({tabId:target.tabId,action:args[1]});
+          if(throwOnAct) throw Error('Cannot access a chrome:// URL');
+          if(act&&act(args[1])) return [{result:act(args[1])}];
+          return [{result:{ok:true,tool:args[1].tool,detail:'mocked'}}];
+        }
+        throw Error('Unexpected injected function '+func.name);
+      }
+    },
+    permissions:{async request(){return true;},async contains(){return true;}}
+  };
+  globalThis.confirm=message=>{ seen.confirms.push(message); return seen.confirms.length-1!==cancelAt; };
+  globalThis.fetch=async(_url,options)=>{
+    const body=JSON.parse(options.body);
+    seen.bodies.push(body);
+    const text=replies[replyIndex]!==undefined?replies[replyIndex++]:'plain text finish';
+    return new Response(JSON.stringify({choices:[{message:{content:text}}]}),{headers:{'content-type':'application/json'}});
+  };
+  return {
+    seen,
+    run:()=>runAgentLoop({cfg:CFG,key:'k',goal:'do it',onEvent:e=>seen.events.push(e),signal:undefined}),
+    restore(){ for(const [k,v] of Object.entries(originals)){ if(v===undefined) delete globalThis[k]; else globalThis[k]=v; } }
+  };
+}
+
+const TAB_A={id:7,url:'https://a.test/one',title:'A',active:true,lastAccessed:200};
+const TAB_B={id:8,url:'https://b.test/two',title:'B',active:false,lastAccessed:100};
+
+test('a malformed action block gets a free retry instead of consuming an agent step',async()=>{
+  const h=harness({tabs:[TAB_A],pageUrls:['https://a.test/one'],replies:[
+    fence({actions:[{tool:'teleport',ref:'e0'}]}),
+    fence({actions:[{tool:'done',text:'finished'}]})
+  ]});
+  try{
+    const res=await h.run();
+    assert.equal(res.done,true);
+    assert.equal(res.steps,1,'two model turns were used but only one real step');
+    assert.equal(h.seen.confirms.length,0,'an invalid block must not reach the approval gate');
+    assert.match(h.seen.bodies.at(-1).messages.at(-1).content,/action block was invalid/);
+  } finally { h.restore(); }
+});
+
+test('free retries are bounded, then invalid blocks do consume steps',async()=>{
+  const h=harness({tabs:[TAB_A],pageUrls:['https://a.test/one'],replies:[
+    fence({actions:[{tool:'teleport',ref:'e0'}]}),
+    fence({actions:[{tool:'teleport',ref:'e0'}]}),
+    fence({actions:[{tool:'teleport',ref:'e0'}]}),
+    fence({actions:[{tool:'done',text:'finished'}]})
+  ]});
+  try{
+    const res=await h.run();
+    assert.equal(res.done,true);
+    assert.equal(res.steps,2,'the third invalid block burned a step');
+  } finally { h.restore(); }
+});
+
+test('the approval prompt names the page the actions will actually run on',async()=>{
+  const h=harness({tabs:[TAB_A],pageUrls:['https://a.test/one','https://b.test/two','https://b.test/two'],tabUrls:['https://a.test/one','https://b.test/two'],replies:[
+    fence({actions:[{tool:'click',ref:'e0'}]}),
+    fence({actions:[{tool:'click',ref:'e0'}]}),
+    fence({actions:[{tool:'done',text:'finished'}]})
+  ]});
+  try{
+    const res=await h.run();
+    assert.equal(res.done,true);
+    assert.equal(h.seen.confirms.length,2);
+    assert.match(h.seen.confirms[0],/https:\/\/a\.test/, 'first approval names the original site');
+    assert.ok(!h.seen.confirms[1].includes('a.test'),'after navigating, the stale origin must not be shown');
+    assert.match(h.seen.confirms[1],/https:\/\/b\.test/,'second approval names the page the actions run on');
+    assert.equal(res.url,'https://b.test/two');
+  } finally { h.restore(); }
+});
+
+test('the approval origin still follows the tab when the re-snapshot fails',async()=>{
+  // Chrome's tab record updates on navigation even when the injected snapshot cannot run, so it is the authority for the approval dialog.
+  const h=harness({tabs:[TAB_A],pageUrls:['https://a.test/one'],tabUrls:['https://a.test/one','https://c.test/three'],snapshotFailsAfter:1,replies:[
+    fence({actions:[{tool:'click',ref:'e0'}]}),
+    fence({actions:[{tool:'click',ref:'e0'}]}),
+    fence({actions:[{tool:'done',text:'finished'}]})
+  ]});
+  try{
+    const res=await h.run();
+    assert.equal(res.done,true,'a failed snapshot must not abort the run');
+    assert.equal(h.seen.confirms.length,2);
+    assert.match(h.seen.confirms[1],/https:\/\/c\.test/,'the approval dialog must name the navigated site, not the stale one');
+    assert.ok(!h.seen.confirms[1].includes('a.test'),'the stale origin must be gone');
+    assert.match(h.seen.bodies.at(-1).messages.at(-1).content,/Post-action snapshot failed/);
+  } finally { h.restore(); }
+});
+
+test('a mid-batch tab switch defers the remaining actions instead of reusing stale refs',async()=>{
+  const h=harness({tabs:[TAB_A,TAB_B],pageUrls:['https://a.test/one','https://b.test/two'],replies:[
+    fence({actions:[{tool:'read-tab',ref:'tab1'},{tool:'click',ref:'e0'}]}),
+    fence({actions:[{tool:'done',text:'finished'}]})
+  ]});
+  try{
+    const res=await h.run();
+    assert.equal(res.done,true);
+    assert.deepEqual(h.seen.act.map(a=>a.tabId),[],'no page action may run against a ref from the previous tab');
+    assert.match(h.seen.bodies.at(-1).messages.at(-1).content,/belong to the previous page/);
+    assert.match(h.seen.confirms[0],/switch to open tab \[tab1\]/);
+    assert.match(h.seen.confirms[0],/B — https:\/\/b\.test\/two/,'the approval dialog must resolve the tab ref');
+  } finally { h.restore(); }
+});
+
+test('an injected-action failure is reported to the model rather than aborting the run',async()=>{
+  const h=harness({tabs:[TAB_A],pageUrls:['https://a.test/one'],throwOnAct:true,replies:[
+    fence({actions:[{tool:'click',ref:'e0'}]}),
+    fence({actions:[{tool:'done',text:'finished'}]})
+  ]});
+  try{
+    const res=await h.run();
+    assert.equal(res.done,true,'the loop survives an executeScript rejection');
+    assert.match(h.seen.bodies.at(-1).messages.at(-1).content,/FAILED[\s\S]*Cannot access a chrome/);
+  } finally { h.restore(); }
+});
+
+test('cancelling at the approval gate stops execution without acting',async()=>{
+  const h=harness({tabs:[TAB_A],pageUrls:['https://a.test/one'],cancelAt:0,replies:[
+    fence({actions:[{tool:'click',ref:'e0'}]})
+  ]});
+  try{
+    const res=await h.run();
+    assert.equal(res.cancelled,true);
+    assert.equal(h.seen.act.length,0);
+  } finally { h.restore(); }
+});
+
+test('a declined tab switch is a safe failure and the run continues',async()=>{
+  const h=harness({tabs:[TAB_A,TAB_B],pageUrls:['https://a.test/one'],replies:[
+    fence({actions:[{tool:'read-tab',ref:'tab9'}]}),
+    fence({actions:[{tool:'done',text:'finished'}]})
+  ]});
+  try{
+    const res=await h.run();
+    assert.equal(res.done,true);
+    assert.match(h.seen.bodies.at(-1).messages.at(-1).content,/Unknown tab ref/);
+    assert.equal(h.seen.act.length,0,'a failed switch runs no page actions');
+  } finally { h.restore(); }
+});
+
+test('execAction bounds a missing page result as a failure',async()=>{
+  const originals={chrome:globalThis.chrome};
+  globalThis.chrome={scripting:{async executeScript(){return [];}}};
+  try{
+    const r=await execAction(1,'doc',{token:'t',url:'https://a.test/'},{tool:'click',ref:'e0'});
+    assert.equal(r.ok,false);
+    assert.match(r.error,/No result from page/);
+  } finally { globalThis.chrome=originals.chrome; }
+});
+
+test('listTabs bounds the tab corpus and labels refs for the observation',()=>{
+  const tabs=Array.from({length:20},(_,i)=>({id:i+1,url:`https://s${i}.test/`,title:'T'+i}));
+  const out=listTabs(tabs);
+  assert.equal(out.length,15);
+  assert.equal(out[0].ref,'tab0');
+  assert.match(out[1].title,/T1/);
+});

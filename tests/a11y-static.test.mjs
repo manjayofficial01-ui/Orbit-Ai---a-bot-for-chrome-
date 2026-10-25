@@ -46,6 +46,28 @@ test('buttons and icon controls expose names; landmarks labelled',()=>{
   assert.match(html,/role="status"/);
 });
 
+test('the conversation is not a live region; status stays the announced channel',()=>{
+  const messages=/<section\b[^>]*\bid="messages"[^>]*>/.exec(html)?.[0]||'';
+  assert.ok(messages.length>0,'conversation region is missing');
+  assert.doesNotMatch(messages,/aria-live/,'renderMessages rebuilds every message on each paint; a live region would re-announce the whole conversation');
+  assert.match(html,/<div id="status" role="status" aria-live="polite"><\/div>/,'progress and completion must still be announced');
+});
+
+test('every aria-label sits on something that can actually carry a name',()=>{
+  const labelled=[...html.matchAll(/<(\w+)\b([^>]*\baria-label="[^"]+"[^>]*)>/g)];
+  assert.ok(labelled.length>=12,'expected labelled controls and regions');
+  const nameable=new Set(['input','select','textarea','button','a','svg','img','section','nav','main','aside','form','fieldset','dialog','legend','label','summary']);
+  for(const [,tag,attrs] of labelled){
+    const hasRole=/\brole="([^"]+)"/.test(attrs);
+    assert.ok(hasRole||nameable.has(tag.toLowerCase()),`<${tag}> carries aria-label but no role, so assistive tech ignores the name`);
+  }
+});
+
+test('the shortcut hint is a stable element the app can localise per platform',()=>{
+  assert.match(html,/<kbd id="newKbd">Ctrl\+K<\/kbd>/,'the default hint must match the non-Mac binding');
+  assert.match(html,/aria-label="Message"/);
+});
+
 test('dynamic page-tools dialog is programmatically named',()=>{
   assert.match(pageAccess,/aria-labelledby/);
   assert.match(pageAccess,/pageTitleTools/);

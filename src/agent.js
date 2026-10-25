@@ -1,4 +1,5 @@
 export const AGENT_MAX_STEPS = 8;
+export const AGENT_PROTOCOL_RETRIES = 2;
 export const AGENT_SNAPSHOT_TEXT_BUDGET = 12000;
 export const AGENT_ACTION_TEXT_BUDGET = 50000;
 export const AGENT_TOOLS = ['snapshot','click','fill','type','select','scroll','focus','hover','press','wait','extract','read-tab','done'];
@@ -26,7 +27,7 @@ export function buildAgentSystemPrompt(){
     '- wait: {"tool":"wait","text":"500"} — pause 100–800 ms for late content (no ref).',
     '- extract: {"tool":"extract"} — no ref; structured outline (headings, items, links, tables) for data tasks.',
     '- scroll: with a ref it centers that element; without a ref use text "top", "bottom" or pixels like "-400" (max ±1200).',
-    '- read-tab: switch the target to another open tab: {"tool":"read-tab","ref":"tab2"}. Only refs shown under Open tabs; the user approves every switch and site grant.',
+    '- read-tab: switch the target to another open tab: {"tool":"read-tab","ref":"tab2"}. Only refs shown under Open tabs; the user approves every switch and site grant. A switch uses the whole step, so propose it alone and act only after reading the new snapshot.',
     '- fill: replace field: {"tool":"fill","ref":"3","text":"new value"}.',
     '- type: append: {"tool":"type","ref":"3","text":" appended"}.',
     '- select: dropdown: {"tool":"select","ref":"5","text":"Option label"}.',
