@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Orbit AI \u2014 Your Provider, Your Workspace",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "minimum_chrome_version": "116",
   "description": "Provider-agnostic browser copilot with persistent BYOP setup, smart context, screenshots and supervised page automation.",
   "permissions": [

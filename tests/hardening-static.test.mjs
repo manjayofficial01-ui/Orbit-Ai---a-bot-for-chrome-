@@ -117,3 +117,14 @@ test('one-click screenshot analysis reuses the reviewed capture and cannot bypas
   assert.doesNotMatch(handler,/captureActiveScreenshot/,'Analyze now must reuse the reviewed capture, not take a new one');
   assert.doesNotMatch(handler,/dataUrl\s*=/,'the handler must not fabricate image data');
 });
+
+test('active-tab context is automatic, not keyword-gated',()=>{
+  assert.doesNotMatch(app,/likelyNeedsPageContext/,'the keyword heuristic must stay gone');
+  assert.match(app,/async function maybeSmartContext\(\)\{const cfg=config\(\);if\(!cfg\.smartContext\|\|pending\.length\)return;/,
+    'auto context must attempt on every send unless something is already attached');
+  assert.match(app,/if\(!active\?\.url\|\|active\.url===location\.href\)return;/,'Orbit must not try to read its own workspace tab');
+  assert.match(app,/await maybeSmartContext\(\);/,'send() must run the automatic read before building the message');
+  assert.match(app,/point them to the Agent button/,'the model must route interaction requests to Agent mode');
+  assert.match(app,/grant access when Chrome prompts/,'the no-context fallback must explain the real fix');
+  assert.doesNotMatch(app,/tell them to use Add page/,'the old nag is gone');
+});

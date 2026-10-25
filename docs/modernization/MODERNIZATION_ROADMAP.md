@@ -1,4 +1,4 @@
-# Modernization Roadmap — after cycle 3 (2026-10-26)
+# Modernization Roadmap — after cycle 4 (2026-10-26)
 
 Legend: done ✓ | next | later | rejected (reason)
 
@@ -6,6 +6,7 @@ Legend: done ✓ | next | later | rejected (reason)
 - (none open)
 
 ## P1 — High impact
+- ✓ FEAT-002 (cycle 4, v2.5.0) automatic active-tab context: the keyword heuristic ("this page" matched, "this post" didn't → model nagged "use Add page") is gone; every message now auto-attaches a fresh snapshot of the active tab (default on, off in Settings → Context, skipped when something else is attached or the active tab is Orbit's own workspace). No-context fallback rewritten to explain the grant-and-resend fix and route interaction requests to Agent mode. Verified by a fail-first hardening gate; live flow in MANUAL-QA 36–38.
 - ✓ FEAT-001 (cycle 3, v2.4.0) active-tab screenshot & analysis: one-click **Analyze now** on the reviewed screenshot in chat, plus an agent `screenshot` tool that attaches the visible page as vision content behind the per-step gate; refuses to capture a non-visible tab, bounds step captures (2 / ~3 MB) and prunes earlier images. Verified by 5 fail-first tests (110 Node); live-Chrome behavior routed to MANUAL-QA 31–35.
 - ✓ SEC-001 approval dialog could name the wrong site after a navigation (informed-consent defect in the core safety gate)
 - ✓ SEC-002 mid-batch `read-tab` let stale refs act on the newly focused tab

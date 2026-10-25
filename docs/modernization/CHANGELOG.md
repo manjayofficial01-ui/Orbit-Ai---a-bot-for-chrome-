@@ -1,5 +1,20 @@
 # Modernization Changelog
 
+## Cycle 4 — 2026-10-26 — feature: automatic active-tab context — v2.5.0 — branch `modernization/2026-10-26-c4`
+
+Trigger: the owner asked about "this post" on a live page and the bot replied "use Add page" — the smart-context keyword gate only matched page/site/tab/article phrasings, so nothing was attached and the system prompt instructed the model to send users to Add page. Product decision (owner): page context must be automatic; the bot should pull from the active tab itself.
+
+### User-visible changes
+- **Every message now auto-attaches a fresh, privacy-filtered snapshot of the active tab** (up to the configured context depth, selection-aware, untrusted-wrapped). No keyword matching, no Add page step. Chrome asks once per site for access on first send; grant it and every later message on that site just works.
+- Skipped automatically when the message already carries a manually attached reference, or when the active tab is Orbit's own workspace (full-tab / detached mode — no error flash, no prompt).
+- **Honest fallback:** if you decline the site prompt, the message still sends and the model now says the page couldn't be read because access wasn't granted, and asks you to grant and resend — replacing the old "page access unavailable, use Add page" lecture. Interaction requests (click/fill/multi-step) are routed to the Agent button instead of the model pretending to act.
+- Settings → Context copy updated to describe always-on behavior; off switch unchanged.
+
+### Internal / verification
+- `likelyNeedsPageContext` heuristic deleted; `maybeSmartContext()` now gates only on the toggle, existing refs, and the self-tab check. System-prompt fallback rewritten (kept the no-pretend-tools line).
+- Tests 113 → **114 Node** (0 fail; new hardening gate demonstrated fail-first on the pre-change app.js), Python 12 unchanged; check exit 0; parity 13/13; version 2.5.0; no new permissions or dependencies.
+- SECURITY.md rewritten for the new data-flow posture (page text ships with most messages by default — documented with the off switch); MANUAL-QA 36–38 added; README and roadmap updated.
+
 ## Cycle 3 — 2026-10-26 — feature: active-tab screenshot & analysis — v2.4.0 — branch `modernization/2026-10-25-c2`
 
 Scope: "take a screenshot and analyze the active browser tab" as a first-class capability. Cycle 2's audit had noted `captureVisibleTab` was never verified end-to-end and the agent was text-only; this cycle closes both gaps.

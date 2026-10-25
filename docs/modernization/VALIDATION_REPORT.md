@@ -1,3 +1,26 @@
+# Validation Report — cycle 4 — 2026-10-26 — feature: automatic active-tab context (v2.5.0)
+
+Baseline = commit `9f4a721` (v2.4.0, main); after = the v2.5.0 feature tree on branch `modernization/2026-10-26-c4`.
+
+| Metric | Command | Baseline (9f4a721) | After (v2.5.0) |
+|---|---|---|---|
+| Build | `npm run build` | ✅ exit 0 | ✅ exit 0 |
+| Static/syntax checks | `npm run check` | ✅ exit 0 | ✅ exit 0 |
+| Node unit tests | `npm run test:extension` | **113 pass / 0 fail** | **114 pass / 0 fail** |
+| Python bridge tests | `python -m unittest discover -s native-host/tests` | 12 pass / 0 fail | 12 pass / 0 fail |
+| src↔dist parity | `cmp` over all 13 built artifacts | 13/13 | **13/13 byte-identical** |
+| Dependency vulns | `npm audit` | N/A — zero deps (ENOLOCK) | N/A — unchanged |
+| Secrets scan | grep over src, dist, native-host, scripts, tests, docs, README | clean | clean |
+| Bundle size | `du -sb dist` | 339,202 B | 339,663 B (+0.14%) |
+| Manifest permissions | `src/manifest.json` | 7 + optional hosts | **unchanged** (version 2.4.0 → 2.5.0 only) |
+| New gate fail-first | hardening gate vs `git show HEAD:src/app.js` | fails (keyword heuristic present, old prompt) | passes |
+
+Behavioral scope of the gate: heuristic absent; auto-context attempt gated only on toggle + existing refs + self-tab skip; `send()` runs it before building the message; system prompt routes interaction to Agent mode and explains grant-and-resend instead of "use Add page".
+
+Not verified here (unchanged limits): a real Chrome permission prompt on first send, the rendered settings copy, and a live provider round-trip — MANUAL-QA 36–38.
+
+---
+
 # Validation Report — cycle 3 — 2026-10-26 — feature: active-tab screenshot & analysis (v2.4.0)
 
 ## Baseline / after metrics (real commands, this machine, this branch `modernization/2026-10-25-c2`)
