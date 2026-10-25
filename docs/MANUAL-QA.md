@@ -31,3 +31,11 @@ Record Chrome version, OS, endpoint, model, API format, date and observed result
 - Open three chats and verify Back/Forward revisits recent conversations without changing browser-page history.
 - Verify A−/A+ and Settings → Appearance persist after restart. Check Small through Extra large at 375 px and desktop widths.
 - At 375 px, confirm the history drawer opens, traps no content behind fixed layers, and all controls remain at least 44 px high where practical.
+
+## Agent Reach research (added 2026-10-25; not executed in this environment)
+
+11. With Agent Reach 1.6+ installed and the bridge registered, open Settings → Reach: installer command shows this extension's ID; Refresh declared capabilities lists channels (web, github, youtube, bilibili, v2ex by default) with actions/backends and declared login metadata.
+12. Run Research with Reach on a URL question; verify the review dialog shows the exact request, Approve performs it (activity log reports channel/backend and item count), Decline makes no network request but consumes a proposed-call slot, and Stop aborts cleanly.
+13. Verify at most 4 proposed calls per run; unsupported/declined proposals never reach the bridge; final answer cites only observed [n] sources; provider-hosted web search stays off during the run.
+14. Without the bridge installed, verify the Reach panel and a research run fail with the distinct bridge-not-installed hint, and chat/agent features still work.
+15. Accessibility pass: all dialogs announce names (settings, Reach review, page context, page tools); keyboard-only operation of Reach review (Tab/Enter/Escape) and sidebar resize (arrow keys).

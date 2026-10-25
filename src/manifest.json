@@ -10,7 +10,8 @@
     "activeTab",
     "scripting",
     "contextMenus",
-    "tabs"
+    "tabs",
+    "nativeMessaging"
   ],
   "optional_host_permissions": [
     "https://*/*",

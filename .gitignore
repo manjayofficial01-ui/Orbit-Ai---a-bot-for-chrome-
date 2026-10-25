@@ -11,3 +11,10 @@ desktop.ini
 
 # Dependencies (none required; no build toolchain)
 node_modules/
+
+# Python artifacts
+__pycache__/
+*.pyc
+
+# Vendored third-party trees kept locally for reference (not part of the extension)
+Agent-Reach-main/

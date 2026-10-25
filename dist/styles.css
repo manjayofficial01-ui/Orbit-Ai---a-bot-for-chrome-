@@ -69,3 +69,16 @@ body[data-mode="popup"] #float{display:none}
 #history .history-del:hover{color:var(--danger);background:var(--offset)}
 @media(min-width:721px) and (max-width:900px){.app{grid-template-columns:var(--sidebar-width,224px) minmax(0,1fr)}.app.nav-hidden{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:720px){#toggleNav{display:none}.app{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}.app>aside{position:fixed}#sidebarResize{display:none}.app.nav-hidden>aside{display:none !important}.app.nav-hidden.nav-open>aside{display:flex !important;transform:translateX(0)}.win-resize{display:none !important}body[data-mode="popup"] .win-resize{display:inline-grid !important}body[data-mode="popup"] #expand,body[data-mode="popup"] #theme{display:inline-grid !important}}
+/* Supervised Agent Reach research */
+.research-activity{margin:12px 0;padding:10px 12px;border:1px solid var(--divider);border-radius:var(--radius-md);background:var(--surface);font-size:.82rem;color:var(--muted)}
+.research-activity summary{cursor:pointer;color:var(--text);font-weight:650}
+.research-activity ol{margin:10px 0 0 20px;display:grid;gap:6px;max-height:260px;overflow:auto}
+.research-activity li{padding-left:3px;overflow-wrap:anywhere}
+.reach-install-command{display:block;margin:12px 0;padding:12px;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--offset);border:1px solid var(--divider);border-radius:var(--radius-md);user-select:all}
+.reach-capabilities{display:grid;gap:8px;margin:12px 0;padding-left:20px;font-size:.85rem}
+#reachStatus{margin-top:12px;color:var(--muted);font-size:.85rem}
+#reachReviewDialog{max-width:560px}
+#reachReviewRequest{white-space:pre-wrap;overflow-wrap:anywhere;max-height:220px;overflow:auto;padding:12px;background:var(--offset);border:1px solid var(--divider);border-radius:var(--radius-md);font:400 .9rem/1.5 inherit}
+.reach-review{display:grid;grid-template-columns:100px minmax(0,1fr);gap:8px 12px;margin:16px 0}
+.reach-review dt{color:var(--muted)}
+.reach-review dd{overflow-wrap:anywhere}

@@ -26,6 +26,7 @@ Do not delete the extracted folder while using the unpacked extension. This pack
 - Search local conversation titles; delete any chat from its × control in the list or the footer; delete individual messages from their Delete button; navigate recently opened conversations with Back/Forward; responsive history drawer.
 - Smart current-page context for page-aware prompts, explicit editable Page preview, visible-tab screenshot attachment, right-click selection draft, and plain-text file attachment.
 - Agent mode (Agent: act on page button): supervised observe-propose-confirm-act-verify loop on the active webpage. Snapshot DOM text + up to 100 editable fields + 120 interactive refs, model proposes max 3 actions per step as fenced orbit-actions JSON, you confirm each step, executor clicks/fills/types/selects/scrolls with token+URL guards and re-snapshots. Max 8 steps. No auto-submit.
+- Supervised Agent Reach research (Research with Reach button): bounded model-driven research through the separately installed Agent Reach CLI. Orbit reads the capabilities `agent-reach channels` declares, the model proposes at most four search/read calls, every proposed call is shown for review before any network request runs, results arrive wrapped as untrusted data, and the final answer may cite only observed sources. Reach channels can include platforms ordinary web search cannot read (bilibili, v2ex, GitHub issues, YouTube subtitles, and optional login-walled channels you set up yourself).
 - Balanced, Analyst, Code and Creative instruction styles.
 - Optional temperature, output-token cap, token parameter alias and reasoning effort.
 - Provider-hosted web search through Responses on official OpenAI/xAI hosts; returned URL annotations become source links.
@@ -48,10 +49,23 @@ Only standard Bearer authentication and unauthenticated loopback inference are s
 
 For Ollama, pull a text model and start the server. If origin checks reject the extension, configure the server to permit your specific chrome-extension://EXTENSION_ID origin, following the server's documentation. Avoid broadly allowing all origins. The ID is shown at chrome://extensions.
 
-## Search and research boundary
-Enable Responses and Provider-hosted web search in Generation & behavior. This is an opt-in pass-through to provider tools, not a standalone research crawler. Tool/model support and costs depend on the provider. A visible search setting does not prove the provider searched; only actual streamed search events or returned sources provide evidence. Citations are provider-supplied, not independently verified by Orbit.
+## Search and research
+Two independent, optional mechanisms:
 
-There is no X-specific search, unsupervised browser clicking, local shell/Python execution, persistent cloud computer, voice, image generation, native PDF parser, or guaranteed vision support. Screenshot attachments depend on the chosen compatible provider/model accepting image data URLs. The research prompt chip helps structure a request; it does not create an autonomous deep-research agent.
+Provider-hosted web search: enable Responses format and Provider-hosted web search in Generation & behavior. This is an opt-in pass-through to provider tools, not a standalone research crawler. Tool/model support and costs depend on the provider. A visible search setting does not prove the provider searched; only actual streamed search events or returned sources provide evidence. Citations are provider-supplied, not independently verified by Orbit.
+
+Supervised Agent Reach research: with Agent Reach 1.6+ installed separately and the one-time Orbit Reach bridge registered (see the next section), the Research with Reach button runs a bounded research loop through Agent Reach's channels — search engines and login-walled or regional platforms a normal provider search cannot reach. Only status, search and read operations exist in the bridge. The model proposes at most four calls per run; each proposal is displayed for approval and nothing is executed until you approve it. Capabilities shown in Settings → Reach are the declarations of `agent-reach channels`, not a live connectivity or login-health check. Provider-hosted web search is disabled during a Reach research run so the two mechanisms do not mix silently.
+
+There is no unsupervised browser clicking by Orbit, persistent cloud computer, voice, image generation, native PDF parser, or guaranteed vision support. Reach research does execute the reviewed search/read subset of the locally installed Agent Reach CLI through a restricted native-messaging bridge; it never sends your provider key, cookies or passwords to Agent Reach, and Orbit cannot add channels, log in, or configure keys on Agent Reach's behalf.
+
+## Agent Reach research setup (optional)
+1. Install Agent Reach 1.6 or later yourself, from its official GitHub release (never the unrelated PyPI package named agent-reach):
+   `uv tool install https://github.com/Panniantong/Agent-Reach/releases/latest/download/agent-reach.zip` then `agent-reach setup`.
+2. Add the channels you want in your terminal (for example `agent-reach add bilibili`, `agent-reach configure groq-key`). Setup, login and key configuration are manual terminal tasks; Orbit never performs or prompts for them.
+3. Open Orbit → Settings → Reach, copy the displayed per-user installer command, and run it from the unpacked extension folder with Chrome closed or after closing Orbit. It registers a native-messaging host allowed only for this exact extension ID and stores only the agent-reach executable path.
+4. Fully restart Chrome, reopen Orbit → Settings → Reach and click Refresh declared capabilities. If channels are listed, Research with Reach is ready.
+
+Uninstall the bridge by deleting the host folder it printed during installation (Windows: %LOCALAPPDATA%\Orbit\ReachBridge, plus the HKCU NativeMessagingHosts registry entry; macOS/Linux: the paths the installer printed).
 
 ## Context, memory and privacy
 Page text is not collected at startup or during navigation. With Smart page context enabled, Orbit reads the active page only when a prompt clearly refers to the current page; otherwise click Page and review the preview. On a webpage with selected text, Page captures that selection. Right-click selection opens a draft, never sends automatically. You can edit or remove references before sending.
@@ -67,6 +81,7 @@ History saving is controlled by the active provider profile's Save conversations
 - 60,000-character serialized generation body budget, not an exact token count.
 - At most 3 references; text references are capped at 24,000 characters, screenshots at roughly 3.5 MB data URL, and text files under 100 KB.
 - 250,000-character generated output cap and five-minute request timeout.
+- Research with Reach: at most four proposed search/read calls per run (declined and unsupported proposals count toward the budget), a 20-second bridge timeout for capability reads and 90 seconds per search/read call, at most 10 items and 12,000 characters of text per item from the bridge, one corrective re-prompt if the model's first planning reply is prose instead of a directive, and a ten-minute overall research cap.
 - Partial answers checkpoint approximately every 1.5 seconds; closed/reloaded requests are interrupted, not resumable. Recent unsaved text can be lost.
 - Failed/interrupted assistant turns are not sent on subsequent requests. Related user turns remain.
 - Closing the active workspace ends generation. The background service worker does not run generation jobs.
@@ -91,11 +106,11 @@ Another workspace open: close the other Orbit tab/panel and click Try again. Exp
 Custom network failure: verify HTTPS, host grant, endpoint path and server availability. Redirects are intentionally rejected. Local endpoints support localhost and 127.0.0.1 HTTP. Custom origin/CORS policy remains the server's responsibility.
 
 ## Developer checks
-Node 20.11+ recommended; no npm dependencies and no build toolchain needed.
+Node 20.11+ and Python 3 (for the native bridge tests) recommended; no npm dependencies and no build toolchain needed beyond node file copies.
 
     npm test
     npm run check
 
-The shipped dist files are directly editable runtime source. src contains copies of the JavaScript for reference. If editing src, copy modified files to dist before reloading the extension. Do not assume an automatic build sync.
+`npm test` first runs scripts/build.mjs, which copies src/*.js, src/manifest.json and the native-host installer into dist/. index.html and styles.css exist only in dist and are edited there directly. If you edit src, run the build (or npm test) before reloading the extension. On Linux, substitute `python3` if your distribution has no `python` alias.
 
 See docs/RESEARCH.md, SECURITY.md, TEST-RESULTS.md and MANUAL-QA.md. No browser screenshots, live paid API test or security certification is claimed.
