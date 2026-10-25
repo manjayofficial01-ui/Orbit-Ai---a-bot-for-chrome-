@@ -39,3 +39,8 @@ Record Chrome version, OS, endpoint, model, API format, date and observed result
 13. Verify at most 4 proposed calls per run; unsupported/declined proposals never reach the bridge; final answer cites only observed [n] sources; provider-hosted web search stays off during the run.
 14. Without the bridge installed, verify the Reach panel and a research run fail with the distinct bridge-not-installed hint, and chat/agent features still work.
 15. Accessibility pass: all dialogs announce names (settings, Reach review, page context, page tools); keyboard-only operation of Reach review (Tab/Enter/Escape) and sidebar resize (arrow keys).
+
+## v2.2 capabilities (added 2026-10-25; not executed in this environment)
+
+16. Page tools → Fetch URL as text: paste an https URL (or leave blank to use the selected tab's URL), approve the site grant, verify plain text lands in the preview and attaches as an untrusted reference; verify http:// non-loopback and non-text content types are rejected with clear errors; verify scripts/remote images never run (DOMParser text only).
+17. Agent mode tab browsing: with 2+ tabs open, start the agent; verify the confirmation dialog resolves read-tab refs to real tab titles/URLs; approve a switch and confirm the loop continues on the new tab (its origin grant is requested); deny a switch and verify the step fails safely; verify refs from a pre-switch snapshot cannot act on the post-switch page (token guard).

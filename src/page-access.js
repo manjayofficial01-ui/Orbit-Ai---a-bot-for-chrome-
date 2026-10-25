@@ -48,8 +48,10 @@ export async function openPageTools(onReference){
  const node=(tag,text)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;return e;};
  const dialog=node('dialog'),title=node('h2','Page access & writing'),notice=node('p','Choose the webpage, grant its site access, then read/scan. Writing replaces one selected text field only after your confirmation. Website input handlers may autosave or send text.'),tabsSelect=node('select'),refresh=node('button','Refresh tabs'),grant=node('button','Grant access to this site'),scan=node('button','Read page & scan fields'),revoke=node('button','Revoke this site'),close=node('button','Close'),msg=node('p'),preview=node('textarea'),attach=node('button','Attach page to chat'),fields=node('select'),replacement=node('textarea'),apply=node('button','Review & write field');
  title.id='pageTitleTools';dialog.setAttribute('aria-labelledby','pageTitleTools');
- tabsSelect.setAttribute('aria-label','Target webpage');fields.setAttribute('aria-label','Target editable field');preview.setAttribute('aria-label','Page text preview');replacement.setAttribute('aria-label','Replacement text');preview.rows=9;replacement.rows=5;replacement.maxLength=50000;replacement.placeholder='Paste an answer or type the exact replacement here. This replaces the complete selected field.';for(const e of [tabsSelect,preview,fields,replacement]){e.style.width='100%';e.style.marginTop='12px';}attach.disabled=true;apply.disabled=true;let tabs=[],snapshot,documentId;
- function reset(){snapshot=null;documentId=null;fields.replaceChildren();preview.value='';attach.disabled=true;apply.disabled=true;}
+ tabsSelect.setAttribute('aria-label','Target webpage');fields.setAttribute('aria-label','Target editable field');preview.setAttribute('aria-label','Page text preview');replacement.setAttribute('aria-label','Replacement text');preview.rows=9;replacement.rows=5;replacement.maxLength=50000;replacement.placeholder='Paste an answer or type the exact replacement here. This replaces the complete selected field.';for(const e of [tabsSelect,preview,fields,replacement]){e.style.width='100%';e.style.marginTop='12px';}attach.disabled=true;apply.disabled=true;let tabs=[],snapshot,documentId,fetched;
+ const urlInput=node('input'),fetchBtn=node('button','Fetch URL as text');
+ urlInput.type='url';urlInput.placeholder='…or paste any https:// URL to fetch as plain text (no scripts run)';urlInput.setAttribute('aria-label','URL to fetch');urlInput.style.width='100%';urlInput.style.marginTop='12px';
+ function reset(){snapshot=null;documentId=null;fetched=null;fields.replaceChildren();preview.value='';attach.disabled=true;apply.disabled=true;}
  function selected(){const t=tabs.find(x=>String(x.id)===tabsSelect.value);if(!t)throw Error('No target webpage. Open a normal HTTP/HTTPS page, then refresh.');return t;}
  const run=fn=>async()=>{try{await fn();}catch(e){msg.textContent=e.message;}};
  async function loadTabs(){reset();const active=await chrome.tabs.query({active:true,lastFocusedWindow:true});tabs=targetTabs(await chrome.tabs.query({}),location.href);tabsSelect.replaceChildren();for(const t of tabs){const o=node('option',(t.title||new URL(t.url).hostname)+' — '+new URL(t.url).origin);o.value=String(t.id);tabsSelect.append(o);}if(active[0]&&tabs.some(t=>t.id===active[0].id))tabsSelect.value=String(active[0].id);msg.textContent=tabs.length?'Confirm the selected target, then grant access.':'No supported webpages found.';}
@@ -58,9 +60,39 @@ export async function openPageTools(onReference){
  grant.onclick=run(async()=>{const t=selected(),pattern=pageOrigin(t.url);const ok=await chrome.permissions.request({origins:[pattern]});msg.textContent=ok?'Access granted. Click Read page & scan fields.':'Permission denied. No page content was read.';});
  revoke.onclick=run(async()=>{const t=selected();await chrome.permissions.remove({origins:[pageOrigin(t.url)]});reset();msg.textContent='Persistent site grant removed. A temporary toolbar activeTab grant, if present, may last until navigation/tab close.';});
  scan.onclick=run(async()=>{reset();const t=selected(),fresh=await chrome.tabs.get(t.id);if(fresh.url!==t.url){await loadTabs();throw Error('Target navigated. Confirm its current site and grant access again.');}pageOrigin(fresh.url);let results;try{results=await chrome.scripting.executeScript({target:{tabId:t.id},func:inspectPage});}catch(e){throw Error('Page access failed. Click Grant access to this site, approve Chrome’s prompt, then retry. Chrome internal/store pages and managed blocked sites cannot be accessed. '+e.message);}const r=results[0];if(!r?.result||!r.documentId)throw Error('No readable document returned.');snapshot=r.result;documentId=r.documentId;preview.value=snapshot.text;attach.disabled=!snapshot.text;for(const f of snapshot.fields){const o=node('option',f.label+' ('+f.kind+', '+f.length+' characters)');o.value=f.id;fields.append(o);}apply.disabled=!snapshot.fields.length;msg.textContent='Read '+snapshot.text.length+' characters; '+snapshot.fields.length+' eligible top-frame fields. Review before attaching or writing.';});
- attach.onclick=run(async()=>{if(!snapshot)throw Error('Read page first.');const ref={title:snapshot.title,url:snapshot.url,text:preview.value.slice(0,24000)};onReference(ref);dialog.close();});
+ attach.onclick=run(async()=>{if(!snapshot&&!fetched)throw Error('Read or fetch first.');const source=snapshot?{title:snapshot.title,url:snapshot.url}:{title:fetched.title,url:fetched.url};onReference({...source,text:preview.value.slice(0,24000),kind:'text'});dialog.close();});
+ fetchBtn.onclick=run(async()=>{
+   let raw=urlInput.value.trim();
+   if(!raw){const t=tabs.find(x=>String(x.id)===tabsSelect.value);raw=t?t.url:'';}
+   if(!raw)throw Error('Paste a URL, or select a webpage first.');
+   let u;try{u=new URL(raw);}catch{throw Error('That does not look like a valid URL.');}
+   if(u.username||u.password)throw Error('URLs with embedded credentials are not fetched.');
+   if(u.protocol!=='https:'&&!(u.protocol==='http:'&&['localhost','127.0.0.1'].includes(u.hostname)))throw Error('Only https:// URLs (or local http servers) can be fetched.');
+   const pattern=u.protocol+'//'+u.hostname+'/*';
+   if(!await chrome.permissions.contains({origins:[pattern]})){const okp=await chrome.permissions.request({origins:[pattern]});if(!okp)throw Error('Site access was not granted; nothing was fetched.');}
+   msg.textContent='Fetching '+u.origin+' as text…';
+   const res=await fetch(u.href,{credentials:'omit',redirect:'error',referrerPolicy:'no-referrer',signal:AbortSignal.timeout(20000)});
+   if(!res.ok)throw Error('Fetch returned HTTP '+res.status+'.');
+   const type=res.headers.get('content-type')||'';
+   if(type&&!/text\/|json|xml|javascript/i.test(type))throw Error('Not a text page (content-type '+type.split(';')[0]+'); nothing was attached.');
+   const body=await res.text();
+   if(body.length>2000000)throw Error('Page exceeds the 2 MB fetch limit.');
+   let text=body,title=u.hostname;
+   if(/html/i.test(type)||/^\s*<(!doctype|html)/i.test(body)){
+     const doc=new DOMParser().parseFromString(body,'text/html');
+     doc.querySelectorAll('script,style,noscript,template,svg').forEach(n=>n.remove());
+     title=String(doc.title||u.hostname).slice(0,200);
+     text=doc.body?doc.body.textContent:'';
+   }
+   text=text.replace(/[ \t]{2,}/g,' ').replace(/\n{3,}/g,'\n\n').trim().slice(0,24000);
+   if(!text)throw Error('No readable text was found at that URL.');
+   reset();
+   fetched={title,url:u.href};
+   preview.value=text;attach.disabled=false;
+   msg.textContent='Fetched '+text.length+' characters from '+u.hostname+'. Review, then attach.';
+ });
  apply.onclick=run(async()=>{if(!snapshot||!documentId)throw Error('Read/scan first.');const t=selected(),f=snapshot.fields.find(f=>f.id===fields.value);if(!f)throw Error('Select an editable field.');const text=replacement.value;if(!text&&!confirm('The replacement is empty. Clear this field?'))return;const host=new URL(snapshot.url).origin;if(!confirm('Replace the entire field “'+f.label+'” on '+host+' with the following text?\n\n'+text+'\n\nThis does not click Submit. The website may autosave on input.'))return;const result=await chrome.scripting.executeScript({target:{tabId:t.id,documentIds:[documentId]},func:writeField,args:[snapshot.token,f.id,text,snapshot.url]});if(result[0]?.result?.error)throw Error(result[0].result.error);if(!result[0]?.result?.ok)throw Error('Write could not be confirmed. Inspect the page before trying again.');apply.disabled=true;msg.textContent='Text inserted. No submit button was clicked. Read/scan again before another write.';});
- const row=node('div');row.className='row';row.append(refresh,grant,scan,revoke);const writeLabel=node('h3','Write into an editable field');const bottom=node('div');bottom.className='row';bottom.append(attach,apply,close);dialog.append(title,notice,tabsSelect,row,msg,preview,writeLabel,fields,replacement,bottom);document.body.append(dialog);dialog.addEventListener('close',()=>dialog.remove(),{once:true});close.onclick=()=>dialog.close();dialog.showModal();await loadTabs();
+ const row=node('div');row.className='row';row.append(refresh,grant,scan,revoke);const writeLabel=node('h3','Write into an editable field');const bottom=node('div');bottom.className='row';bottom.append(attach,apply,close);dialog.append(title,notice,tabsSelect,row,urlInput,fetchBtn,msg,preview,writeLabel,fields,replacement,bottom);document.body.append(dialog);dialog.addEventListener('close',()=>dialog.remove(),{once:true});close.onclick=()=>dialog.close();dialog.showModal();await loadTabs();
 }
 export function snapshotPage(){
   const sel=window.getSelection()?.toString()||'';

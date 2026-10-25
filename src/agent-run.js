@@ -30,18 +30,41 @@ function explainStep(actions){
   return describeActions(actions);
 }
 
+export function listTabs(tabs){
+  return tabs.slice(0,15).map((t,i)=>({ref:'tab'+i,id:t.id,title:String(t.title||'').slice(0,80),url:String(t.url||'').slice(0,160)}));
+}
+
 export async function runAgentLoop({cfg,key,goal,onEvent,signal}){
-  const {tab}=await resolveAgentTarget();
+  const {tab,tabs}=await resolveAgentTarget();
   pageOrigin(tab.url);
   const fresh=await chrome.tabs.get(tab.id);
   if(fresh.url!==tab.url) throw Error('Target navigated. Retry on its current page.');
-  const url=fresh.url;
-  const grant=await chrome.permissions.request({origins:[pageOrigin(url)]});
+  const grant=await chrome.permissions.request({origins:[pageOrigin(fresh.url)]});
   if(!grant) throw Error('Permission denied. No page content was read.');
-  let snap=await takeSnapshot(tab.id);
-  let snapshot=snap.snapshot;
-  const documentId=snap.documentId;
-  const history=[{role:'system',content:buildAgentSystemPrompt()},{role:'user',content:'Goal: '+String(goal||'').slice(0,4000)+'\n'+buildAgentObservation(snapshot,[])}];
+  const tabRefs=listTabs(tabs);
+  let activeTabId=tab.id;
+  let snap=await takeSnapshot(activeTabId);
+  let snapshot=snap.snapshot, activeDocumentId=snap.documentId, activeUrl=fresh.url;
+  const switchTab=async ref=>{
+    const entry=tabRefs.find(t=>t.ref===String(ref||''));
+    if(!entry) return {tool:'read-tab',ref,ok:false,error:'Unknown tab ref. Use the refs from the latest observation.'};
+    if(entry.id===activeTabId) return {tool:'read-tab',ref,ok:true,detail:'already reading this tab'};
+    let target;
+    try{ target=await chrome.tabs.get(entry.id); }
+    catch{ return {tool:'read-tab',ref,ok:false,error:'That tab was closed.'}; }
+    if(!target.url){ return {tool:'read-tab',ref,ok:false,error:'That tab has no readable URL.'}; }
+    try{ pageOrigin(target.url); }catch(e){ return {tool:'read-tab',ref,ok:false,error:e.message}; }
+    const pattern=pageOrigin(target.url);
+    let granted=await chrome.permissions.contains({origins:[pattern]});
+    if(!granted) granted=await chrome.permissions.request({origins:[pattern]});
+    if(!granted) return {tool:'read-tab',ref,ok:false,error:'Site access for '+new URL(target.url).hostname+' was not granted; the tab was not read.'};
+    try{
+      const next=await takeSnapshot(target.id);
+      activeTabId=target.id; snapshot=next.snapshot; activeDocumentId=next.documentId; activeUrl=target.url;
+    }catch(e){ return {tool:'read-tab',ref,ok:false,error:e.message}; }
+    return {tool:'read-tab',ref,ok:true,detail:'now reading '+String(target.title||new URL(target.url).hostname).slice(0,120)};
+  };
+  const history=[{role:'system',content:buildAgentSystemPrompt()},{role:'user',content:'Goal: '+String(goal||'').slice(0,4000)+'\n'+buildAgentObservation(snapshot,[],tabRefs)}];
   const transcript=[];
   let stepResults=[];
   for(let step=1;step<=AGENT_MAX_STEPS;step++){
@@ -59,40 +82,45 @@ export async function runAgentLoop({cfg,key,goal,onEvent,signal}){
       const clean=stripAgentFence(raw).trim()||raw.trim();
       transcript.push(clean);
       onEvent?.({type:'answer',step,text:clean});
-      return {done:true,transcript,steps:step,url};
+      return {done:true,transcript,steps:step,url:activeUrl};
     }
     if(parsed.done){
       const doneText=parsed.actions[0].text||stripAgentFence(raw);
       transcript.push(doneText);
       onEvent?.({type:'done',step,text:doneText});
-      return {done:true,transcript,steps:step,url};
+      return {done:true,transcript,steps:step,url:activeUrl};
     }
     const desc=explainStep(parsed.actions);
-    const ok=confirm('Orbit agent step '+step+' on '+new URL(url).origin+':\n\n'+desc+'\n\nRun these '+parsed.actions.length+' action(s)? Cancel stops the run.');
+    const legend=parsed.actions.filter(a=>a.tool==='read-tab')
+      .map(a=>{const e=tabRefs.find(t=>t.ref===a.ref);return a.ref+' = '+(e?e.title+' — '+e.url:'unknown tab');}).join('\n');
+    const ok=confirm('Orbit agent step '+step+' on '+new URL(activeUrl).origin+':\n\n'+desc+(legend?'\n\nTabs:\n'+legend:'')+'\n\nRun these '+parsed.actions.length+' action(s)? Cancel stops the run.');
     if(!ok){
       onEvent?.({type:'cancelled',step,text:'User cancelled at step '+step+'.'});
-      return {done:false,transcript,steps:step,cancelled:true,url};
+      return {done:false,transcript,steps:step,cancelled:true,url:activeUrl};
     }
     const results=[];
     for(const a of parsed.actions){
       signal?.throwIfAborted?.();
-      const r=await execAction(tab.id,documentId,snapshot,a);
+      const r=a.tool==='read-tab'?await switchTab(a.ref):await execAction(activeTabId,activeDocumentId,snapshot,a);
       results.push(r);
-      onEvent?.({type:'action',step,text:r.tool+' '+(r.ref||'')+': '+(r.ok?'ok':'FAILED — '+r.error)});
+      onEvent?.({type:'action',step,text:r.tool+' '+(r.ref||'')+': '+(r.ok?'ok'+(r.detail?' — '+r.detail:''):'FAILED — '+r.error)});
       if(!r.ok) break;
     }
     stepResults=results;
-    if(results.some(r=>r.tool==='snapshot'&&r.ok)){
-      snap=await takeSnapshot(tab.id);
-      snapshot=snap.snapshot;
-    } else {
-      try{ const s2=await takeSnapshot(tab.id); snapshot=s2.snapshot; }
-      catch(e){ history.push({role:'assistant',content:raw},{role:'user',content:'Post-action snapshot failed: '+e.message}); continue; }
+    const switched=results.some(r=>r.tool==='read-tab'&&r.ok&&r.detail!=='already reading this tab');
+    if(!switched){
+      if(results.some(r=>r.tool==='snapshot'&&r.ok)){
+        snap=await takeSnapshot(activeTabId);
+        snapshot=snap.snapshot; activeDocumentId=snap.documentId;
+      } else {
+        try{ const s2=await takeSnapshot(activeTabId); snapshot=s2.snapshot; activeDocumentId=s2.documentId; }
+        catch(e){ history.push({role:'assistant',content:raw},{role:'user',content:'Post-action snapshot failed: '+e.message}); continue; }
+      }
     }
     transcript.push('[step '+step+'] '+desc+'\n'+results.map(r=>'- '+r.tool+' '+(r.ref||'')+': '+(r.ok?'ok':'FAILED — '+r.error)).join('\n'));
     history.push({role:'assistant',content:raw});
-    history.push({role:'user',content:buildAgentObservation(snapshot,stepResults)});
+    history.push({role:'user',content:buildAgentObservation(snapshot,stepResults,tabRefs)});
     onEvent?.({type:'observation',step,text:'Page re-read: '+snapshot.text.length+' chars, '+(snapshot.fields?.length||0)+' fields.'});
   }
-  return {done:false,transcript,steps:AGENT_MAX_STEPS,url,hitLimit:true};
+  return {done:false,transcript,steps:AGENT_MAX_STEPS,url:activeUrl,hitLimit:true};
 }

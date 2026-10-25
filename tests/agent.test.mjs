@@ -15,6 +15,19 @@ test('strip fence',()=>{ assert.equal(stripAgentFence('answer\n```orbit-actions\
 test('describe truncates',()=>{ assert.match(describeActions([{tool:'fill',ref:'0',text:'x'.repeat(500)}]),/500 chars/); });
 test('observation wraps untrusted',()=>{ const o=buildAgentObservation({title:'T',url:'https://a.test/',text:'hello',fields:[{id:'0',label:'Name',kind:'input',length:0}],interactives:[{ref:'e0',role:'button',name:'Go'}]},[{tool:'click',ref:'e0',ok:true}]); assert.match(o,/<untrusted_page>/); assert.match(o,/Editable fields/); });
 test('caps at 8 steps',()=>assert.equal(AGENT_MAX_STEPS,8));
+test('read-tab validated against tab refs from the observation',()=>{
+  assert.equal(validateAgentAction({tool:'read-tab',ref:'tab2'}),null);
+  assert.match(validateAgentAction({tool:'read-tab',ref:'e2'}),/Open tabs/);
+  assert.match(validateAgentAction({tool:'read-tab'}),/Open tabs/);
+  assert.match(validateAgentAction({tool:'read-tab',ref:'tab2',text:'x'}),/takes no text/);
+  assert.match(describeActions([{tool:'read-tab',ref:'tab1'}]),/switch to open tab/);
+});
+test('observation lists open tabs inside the untrusted wrapper',()=>{
+  const o=buildAgentObservation({title:'T',url:'https://a.test/',text:'x'},[],[{ref:'tab0',id:1,title:'Search results',url:'https://s.test/?q=1'},{ref:'tab1',id:2,title:'Docs',url:'https://d.test/guide'}]);
+  assert.match(o,/Open tabs:/);
+  assert.match(o,/tab0\] Search results — https:\/\/s\.test\/\?q=1/);
+  assert.ok(o.indexOf('Open tabs:')<o.indexOf('</untrusted_page>'));
+});
 test('nonstream body',()=>{ const b=requestAgentBody({base:'https://api.openai.com/v1',model:'m',format:'chat',temperature:'',maxTokens:'',effort:'',search:false},[{role:'user',content:'hi'}]); assert.equal(b.stream,false); });
 test('agent body disables search',()=>{ const b=requestAgentBody({base:'https://api.openai.com/v1',model:'m',format:'responses',temperature:'',maxTokens:'',effort:'',search:true},[{role:'user',content:'hi'}]); assert.equal(b.tools,undefined); });
 test('generateOnce posts nonstream',async()=>{ const old=globalThis.fetch; let seen; globalThis.fetch=async(u,o)=>{ seen={u,o}; return new Response(JSON.stringify({choices:[{message:{content:'ok'}}]}),{headers:{'content-type':'application/json'}}); }; try{ const r=await generateOnce({base:'https://api.openai.com/v1',model:'m',format:'chat',temperature:'',maxTokens:'',effort:'',search:false},'',[{role:'user',content:'hi'}],{}); assert.equal(r.text,'ok'); assert.match(seen.o.body,/"stream":false/); }finally{ globalThis.fetch=old; } });
