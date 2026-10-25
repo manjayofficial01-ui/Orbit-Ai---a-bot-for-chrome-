@@ -83,8 +83,10 @@ test('the URL fetch bounds the download while reading, not after buffering it',(
 test('the agent refreshes the approval origin from Chrome, not only from the snapshot',()=>{
   assert.match(agentRun,/const syncOrigin=async\(\)=>\{ try\{ const t=await chrome\.tabs\.get\(activeTabId\); if\(t\?\.url\) activeUrl=t\.url; \}catch\{\} \};/,
     'the tab record is the authoritative origin for the approval dialog');
-  assert.equal([...agentRun.matchAll(/await syncOrigin\(\);/g)].length,2,
+  assert.ok([...agentRun.matchAll(/await syncOrigin\(\);/g)].length>=2,
     'both the normal path and the failed-re-snapshot path must refresh the origin');
+  assert.ok([...agentRun.matchAll(/await syncOrigin\(\);/g)].length>=4,
+    'since v2.6.0 the goto and nav-history helpers refresh it too (still-loading destinations)');
 });
 
 test('a tab switch ends the step so later refs cannot alias the new page',()=>{
@@ -127,4 +129,21 @@ test('active-tab context is automatic, not keyword-gated',()=>{
   assert.match(app,/point them to the Agent button/,'the model must route interaction requests to Agent mode');
   assert.match(app,/grant access when Chrome prompts/,'the no-context fallback must explain the real fix');
   assert.doesNotMatch(app,/tell them to use Add page/,'the old nag is gone');
+});
+
+test('navigation tools are grant-gated and end their step',()=>{
+  assert.match(agentRun,/const endsStep=r\.ok&&\(a\.tool==='goto'\|\|a\.tool==='nav-history'\|\|\(a\.tool==='read-tab'&&r\.detail!=='already reading this tab'\)\);/,
+    'goto and nav-history must end the step exactly like read-tab');
+  assert.match(agentRun,/const navigated=results\.some\(r=>r\.ok&&\(r\.tool==='goto'\|\|r\.tool==='nav-history'\|\|\(r\.tool==='read-tab'&&r\.detail!=='already reading this tab'\)\)\)/);
+  const gotoFn=/const gotoUrl=async\(raw\)=>\{[\s\S]*?\n  \};/.exec(agentRun)?.[0]||'';
+  assert.ok(gotoFn.length>0,'gotoUrl must exist');
+  assert.match(gotoFn,/permissions\.request\(\{origins:\[pattern\]\}\)/,'the destination grant is requested');
+  assert.ok(gotoFn.indexOf('permissions.request')<gotoFn.indexOf('chrome.tabs.update'),'the site grant must be settled before any navigation happens');
+  assert.match(gotoFn,/if\(!granted\)return \{tool:'goto',ok:false,error:'Site access for '/,'a denied grant must abort before navigating');
+  assert.match(gotoFn,/u\.username\|\|u\.password/,'credential-bearing URLs are refused');
+});
+
+test('the in-page key executor allows exactly what the agent tool validates',()=>{
+  assert.match(pageAccess,/const KEYS=\['Tab','Escape','Enter','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'\];/,
+    'agentAct must execute every key AGENT_KEYS validates — a mismatch makes the approval dialog promise keys the page refuses (review F1)');
 });

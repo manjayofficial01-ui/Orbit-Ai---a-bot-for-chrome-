@@ -1,5 +1,30 @@
 # Modernization Changelog
 
+## Cycle 5 — 2026-10-26 — feature: browser-use-grade navigation core — v2.6.0 — branch `modernization/2026-10-26-c5`
+
+Trigger: the owner asked for computer-use/browser-use-style "total control over the active webpage" with real agentic capability. Orbit already had the actuator surface (click/fill/select/scroll/hover/screenshot since v2.3/v2.4); what browser-use has and Orbit lacked was **navigation**. This cycle closes that gap — the right form for an extension that already lives inside Chrome (no vendored Python framework; Orbit *is* the browser driver).
+
+### User-visible features
+- **`goto`**: the agent can navigate the target tab to any plain http(s) URL (credential-bearing and non-http URLs refused). The full destination URL appears in the step approval dialog; the destination site's access is requested and settled **before** any navigation; denial means "nothing was opened". After navigating, the loop waits up to ~8 s for the page to become readable, then re-reads it.
+- **`nav-history`**: back/forward through the tab's history, with the same grant-and-read handling; if no navigation actually happens (start/end of history) the model is told instead of being shown a stale page.
+- **Enter key** (policy change at owner's request): `press` now allows Enter — previously "never synthesised". Every Enter proposal carries an explicit "Enter can submit the focused form; approve deliberately" warning in the approval dialog. The real safety line is unchanged: every action, navigation and Enter included, runs only behind the per-step approval gate, and nothing auto-submits.
+- Both navigation tools end their step exactly like `read-tab`: any action batched after a navigation is deferred with a "refs belong to the previous page" note (the SEC-002 rule, generalized). The system prompt now teaches the full observe → navigate → act → verify operator loop.
+
+### Internal
+- `navHistoryStep` added to the page-injected surface (`src/page-access.js`); `gotoUrl`/`navHistory`/`snapshotAfterNavigation` helpers in `src/agent-run.js`; validation + descriptions + prompt in `src/agent.js`; harness gains `tabs.update`, `navHistoryStep` and origin-denial mocks. Test-infra fix found by the new tests: the `tabs.update` mock mutated the shared module-level TAB_A fixture across tests; fixtures are copied per harness now (test-only change). SECURITY.md Enter stance rewritten; README agent bullet + limits updated; MANUAL-QA 39–42 added; roadmap FEAT-003.
+
+### Independent review and remediation (same cycle)
+
+A fresh reviewer subagent (diff + criteria + commands only) returned **FAIL** with two must-fix findings and four backlog notes; both must-fixes and the top notes were fixed in-cycle, each behind a gate that fails on the pre-fix code:
+
+- **F1 (Critical): Enter was approved but never executed** — the validation layer (`AGENT_KEYS`) allowed Enter while the in-page executor (`agentAct` in page-access.js) still hard-blocked it: the user would approve a warned Enter that then fails in the page. Fixed by adding Enter to the executor allowlist; a new hardening gate pins executor/validation key parity so the two lists can never drift again.
+- **F2 (High): goto could accept the previous document as the destination** — `tabs.update` resolves at navigation start, so the first readable snapshot could still be the old page, presented as "loaded <destination>". Fixed with a commit wait (the tab record must move off the previous URL) plus origin verification of every post-navigation snapshot; the observed committed URL (post-redirect) now drives the grant and the snapshot check, which also fixes redirected destinations reporting a misleading "still loading" (B2).
+- **B1:** when back/forward lands on a denied origin and the re-snapshot fails, the step's own results (including the honest denial) were swallowed — the failure message now carries them.
+- **B3:** both navigation wait loops now honor the abort signal. **B4:** the approval dialog shows the destination URL up to 600 characters (was 160).
+- Documented nuance for MANUAL-QA 42: Enter dispatches synthetic keydown/keyup — sites submitting via JavaScript handlers respond; a purely native form submit (default action) is not triggered by synthetic events. The submit warning in the dialog remains the correct caution.
+
+Tests after remediation: 119 → **122 Node** (0 fail), Python 12 unchanged; check exit 0; parity 13/13; secrets clean; no new permissions or dependencies; version 2.6.0 (manifest description now mentions navigation).
+
 ## Cycle 4 — 2026-10-26 — feature: automatic active-tab context — v2.5.0 — branch `modernization/2026-10-26-c4`
 
 Trigger: the owner asked about "this post" on a live page and the bot replied "use Add page" — the smart-context keyword gate only matched page/site/tab/article phrasings, so nothing was attached and the system prompt instructed the model to send users to Add page. Product decision (owner): page context must be automatic; the bot should pull from the active tab itself.

@@ -24,12 +24,34 @@ test('v2.3 agentic tools validate correctly',()=>{
   assert.match(validateAgentAction({tool:'wait',text:'900'}),/100 to 800/);
   assert.match(validateAgentAction({tool:'wait',ref:'e1'}),/no ref/);
 });
-test('press allows only non-activating keys',()=>{
+test('press keys: safe keys always; Enter allowed but flagged in the approval description',()=>{
   assert.equal(validateAgentAction({tool:'press',ref:'e1',text:'Tab'}),null);
   assert.equal(validateAgentAction({tool:'press',ref:'e1',text:'ArrowDown'}),null);
-  assert.match(validateAgentAction({tool:'press',ref:'e1',text:'Enter'}),/press text must be one of/);
+  assert.equal(validateAgentAction({tool:'press',ref:'e1',text:'Enter'}),null);
+  assert.match(validateAgentAction({tool:'press',ref:'e1',text:'a'}),/press text must be one of/);
   assert.match(validateAgentAction({tool:'press',ref:'e1'}),/press text must be one of/);
   assert.match(validateAgentAction({tool:'press',text:'Tab'}),/needs a "ref"/);
+  assert.match(describeActions([{tool:'press',ref:'e1',text:'Enter'}]),/can submit the focused form/,'the approval description must warn about Enter');
+  assert.doesNotMatch(describeActions([{tool:'press',ref:'e1',text:'Tab'}]),/can submit/);
+});
+test('goto and nav-history validate destinations and document the operator loop',()=>{
+  assert.ok(AGENT_TOOLS.includes('goto')&&AGENT_TOOLS.includes('nav-history'));
+  assert.equal(validateAgentAction({tool:'goto',text:'https://b.test/landing'}),null);
+  assert.equal(validateAgentAction({tool:'goto',text:'http://localhost:3000/x'}),null);
+  assert.match(validateAgentAction({tool:'goto'}),/needs a "text" URL/);
+  assert.match(validateAgentAction({tool:'goto',text:'notaurl'}),/valid URL/);
+  assert.match(validateAgentAction({tool:'goto',text:'chrome://settings'}),/plain http\(s\) URLs/);
+  assert.match(validateAgentAction({tool:'goto',text:'https://user:pw@b.test/'}),/plain http\(s\) URLs/);
+  assert.match(validateAgentAction({tool:'goto',text:'https://b.test/',ref:'e1'}),/takes no ref/);
+  assert.equal(validateAgentAction({tool:'nav-history',text:'back'}),null);
+  assert.equal(validateAgentAction({tool:'nav-history',text:'forward'}),null);
+  assert.match(validateAgentAction({tool:'nav-history',text:'up'}),/"back" or "forward"/);
+  assert.match(validateAgentAction({tool:'nav-history',ref:'e1'}),/takes no ref/);
+  assert.match(describeActions([{tool:'goto',text:'https://b.test/landing'}]),/go to https:\/\/b\.test\/landing/);
+  assert.match(describeActions([{tool:'nav-history',text:'back'}]),/navigate back in history/);
+  assert.match(buildAgentSystemPrompt(),/- goto:/);
+  assert.match(buildAgentSystemPrompt(),/- nav-history:/);
+  assert.match(buildAgentSystemPrompt(),/Enter can submit the focused form/);
 });
 test('hover needs a ref; scroll accepts page-level amounts or a ref',()=>{
   assert.equal(validateAgentAction({tool:'hover',ref:'e1'}),null);

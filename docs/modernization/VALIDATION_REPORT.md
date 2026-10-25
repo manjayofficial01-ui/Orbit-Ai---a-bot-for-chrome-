@@ -1,3 +1,38 @@
+# Validation Report — cycle 5 — 2026-10-26 — feature: browser-use-grade navigation core (v2.6.0)
+
+Baseline = commit `b3cc9ae` (v2.5.0, main); after = the v2.6.0 feature tree on branch `modernization/2026-10-26-c5`.
+
+| Metric | Command | Baseline (b3cc9ae) | After (v2.6.0) |
+|---|---|---|---|
+| Build | `npm run build` | ✅ exit 0 | ✅ exit 0 |
+| Static/syntax checks | `npm run check` | ✅ exit 0 | ✅ exit 0 |
+| Node unit tests | `npm run test:extension` | **114 pass / 0 fail** | **122 pass / 0 fail** |
+| Python bridge tests | `python -m unittest discover -s native-host/tests` | 12 pass / 0 fail | 12 pass / 0 fail |
+| src↔dist parity | `cmp` over all 13 built artifacts | 13/13 | **13/13 byte-identical** |
+| Dependency vulns | `npm audit` | N/A — zero deps (ENOLOCK) | N/A — unchanged |
+| Secrets scan | grep over src, dist, native-host, scripts, tests, docs, README | clean | clean |
+| Bundle size | `du -sb dist` | 339,663 B | 346,567 B (+2.0%) |
+| Manifest permissions | `src/manifest.json` | 7 + optional hosts | **unchanged** (version 2.5.0 → 2.6.0 + description only) |
+| New tests fail-first | vs `git show HEAD:` sources | — | 5 behavioral tests failed on HEAD dist sources; both hardening gates failed on HEAD src (incl. the extended syncOrigin count ≥ 4) |
+
+## Independent review (cycle 5)
+
+A fresh reviewer subagent returned **FAIL** — two must-fix findings, both real and both fixed in-cycle with fail-first gates:
+
+- **F1 (Critical):** Enter was admitted by the validation layer but still hard-blocked by the in-page executor (`agentAct`'s separate `KEYS` allowlist) — the user would approve a warned Enter that then fails in the page. Fixed; a new gate pins executor/validation key parity.
+- **F2 (High):** `goto`'s readable-wait accepted the first readable snapshot, which can be the still-committed previous document (the reviewer demonstrated the race with a probe harness). Fixed with a commit wait (tab URL must leave the previous value) plus per-snapshot origin verification against the **observed committed URL** — which also fixes redirected destinations (B2) reporting a misleading "still loading".
+- Backlog fixed same-cycle: B1 (denied-origin step results swallowed by a failed re-snapshot — now included), B3 (abort honored inside both wait loops), B4 (approval dialog shows the destination URL up to 600 chars). B5 (stale Open-tabs list) remains the known REV-009/REL-009 backlog item.
+
+The 3 remediation tests were demonstrated failing on reverse-patched pre-fix sources, then passing. Final: **122 Node / 0 fail**, 12 Python, check exit 0, parity 13/13, secrets clean.
+
+Behavioral coverage: goto passes the approval gate with the destination URL, performs exactly one navigation, defers batched actions, and the next observation is the destination page; nav-history navigates back without opening URLs and reads the previous page; a denied destination grant blocks goto with zero navigations; Enter validates and its approval description carries the submit warning (Tab's does not).
+
+Test-infra fix during the cycle: the harness `tabs.update` mock mutated the shared module-level `TAB_A` fixture, leaking a goto test's navigation into later tests (surfaced as a bogus startup permission denial and a wrong approval origin); fixtures are now copied per harness instance.
+
+Not verified here (unchanged limits): real `chrome.tabs.update` navigation timing, the ~8 s readable-wait against slow sites, live permission prompts, and a real provider round-trip — MANUAL-QA 39–42.
+
+---
+
 # Validation Report — cycle 4 — 2026-10-26 — feature: automatic active-tab context (v2.5.0)
 
 Baseline = commit `9f4a721` (v2.4.0, main); after = the v2.5.0 feature tree on branch `modernization/2026-10-26-c4`.

@@ -1,4 +1,4 @@
-import {pageOrigin,targetTabs,snapshotPage,agentAct} from './page-access.js';
+import {pageOrigin,targetTabs,snapshotPage,agentAct,navHistoryStep} from './page-access.js';
 import {generateOnce} from './core.js';
 import {AGENT_MAX_STEPS,AGENT_PROTOCOL_RETRIES,buildAgentSystemPrompt,buildAgentObservation,parseAgentActions,stripAgentFence,describeActions} from './agent.js';
 
@@ -68,6 +68,67 @@ export async function runAgentLoop({cfg,key,goal,onEvent,signal}){
     return {tool:'read-tab',ref,ok:true,detail:'now reading '+String(target.title||new URL(target.url).hostname).slice(0,120)};
   };
   const syncOrigin=async()=>{ try{ const t=await chrome.tabs.get(activeTabId); if(t?.url) activeUrl=t.url; }catch{} };
+  const snapshotAfterNavigation=async(url)=>{
+    let pattern;try{pattern=pageOrigin(url);}catch{return {error:'The new page ('+String(url).slice(0,80)+') is not a normal webpage Orbit can script.'};}
+    let granted=await chrome.permissions.contains({origins:[pattern]});
+    if(!granted)granted=await chrome.permissions.request({origins:[pattern]});
+    if(!granted)return {error:'Site access for '+new URL(url).hostname+' was not granted; the page opened but was not read.'};
+    const wantOrigin=new URL(url).origin;
+    for(let i=0;i<16;i++){
+      signal?.throwIfAborted?.();
+      try{
+        const s=await takeSnapshot(activeTabId);
+        // tabs.update resolves at navigation start: the first readable document can still be the previous page.
+        let snapOrigin=null;try{snapOrigin=new URL(s.snapshot.url||url).origin;}catch{}
+        if(snapOrigin&&snapOrigin!==wantOrigin){await new Promise(r=>setTimeout(r,500));continue;}
+        return {snap:s};
+      }catch{await new Promise(r=>setTimeout(r,500));}
+    }
+    return {};
+  };
+  const gotoUrl=async(raw)=>{
+    let u;try{u=new URL(String(raw||'').trim());}catch{return {tool:'goto',ok:false,error:'goto text must be a valid URL.'};}
+    if(!['http:','https:'].includes(u.protocol)||u.username||u.password)return {tool:'goto',ok:false,error:'goto only accepts plain http(s) URLs without credentials.'};
+    const pattern=u.protocol+'//'+u.hostname+'/*';
+    let granted=await chrome.permissions.contains({origins:[pattern]});
+    if(!granted)granted=await chrome.permissions.request({origins:[pattern]});
+    if(!granted)return {tool:'goto',ok:false,error:'Site access for '+u.hostname+' was not granted; nothing was opened.'};
+    let prevUrl='';try{prevUrl=(await chrome.tabs.get(activeTabId)).url||'';}catch{}
+    try{await chrome.tabs.update(activeTabId,{url:u.href});}
+    catch(e){return {tool:'goto',ok:false,error:'Navigation failed: '+String(e&&e.message||e).slice(0,160)};}
+    // Wait for the commit: the tab record moves off the previous URL (a redirect lands on its final URL, which then gets its own grant check).
+    let committed=null;
+    if(prevUrl!==u.href){
+      for(let i=0;i<12;i++){
+        signal?.throwIfAborted?.();
+        await new Promise(r=>setTimeout(r,400));
+        try{const t=await chrome.tabs.get(activeTabId);if(t.url&&t.url!==prevUrl){committed=t.url;break;}}catch{}
+      }
+    }else committed=u.href;
+    if(committed===null){await syncOrigin();return {tool:'goto',ok:true,detail:'navigating to '+u.hostname+' is slow; snapshot again shortly'};}
+    const res=await snapshotAfterNavigation(committed);
+    if(res.error)return {tool:'goto',ok:false,error:res.error};
+    if(res.snap){snapshot=res.snap.snapshot;activeDocumentId=res.snap.documentId;activeUrl=res.snap.snapshot.url||committed;return {tool:'goto',ok:true,detail:'loaded '+new URL(committed).hostname};}
+    await syncOrigin();
+    return {tool:'goto',ok:true,detail:'navigated to '+new URL(committed).hostname+'; still loading — wait or snapshot again'};
+  };
+  const navHistory=async(dir)=>{
+    let startUrl='';try{startUrl=(await chrome.tabs.get(activeTabId)).url||'';}catch{}
+    try{await chrome.scripting.executeScript({target:{tabId:activeTabId},func:navHistoryStep,args:[dir]});}
+    catch(e){return {tool:'nav-history',ok:false,error:'Could not navigate '+dir+': '+String(e&&e.message||e).slice(0,160)};}
+    let newUrl=null;
+    for(let i=0;i<12;i++){
+      signal?.throwIfAborted?.();
+      await new Promise(r=>setTimeout(r,400));
+      try{const t=await chrome.tabs.get(activeTabId);if(t.url&&t.url!==startUrl){newUrl=t.url;break;}}catch{}
+    }
+    if(newUrl===null)return {tool:'nav-history',ok:false,error:'No '+dir+' navigation happened (start or end of history).'};
+    const res=await snapshotAfterNavigation(newUrl);
+    if(res.error)return {tool:'nav-history',ok:false,error:res.error};
+    if(res.snap){snapshot=res.snap.snapshot;activeDocumentId=res.snap.documentId;activeUrl=res.snap.snapshot.url||newUrl;return {tool:'nav-history',ok:true,detail:'went '+dir+' to '+String(newUrl).slice(0,120)};}
+    await syncOrigin();
+    return {tool:'nav-history',ok:true,detail:'went '+dir+'; page still loading — snapshot again'};
+  };
   const history=[{role:'system',content:buildAgentSystemPrompt()},{role:'user',content:'Goal: '+String(goal||'').slice(0,4000)+'\n'+buildAgentObservation(snapshot,[],tabRefs)}];
   const transcript=[];
   let stepResults=[];
@@ -122,34 +183,42 @@ export async function runAgentLoop({cfg,key,goal,onEvent,signal}){
     stepShots=[];stepShotBytes=0;
     for(const a of parsed.actions){
       signal?.throwIfAborted?.();
-      const r=a.tool==='read-tab'?await switchTab(a.ref):a.tool==='screenshot'?await captureShot():await execAction(activeTabId,activeDocumentId,snapshot,a);
+      const r=a.tool==='read-tab'?await switchTab(a.ref):a.tool==='screenshot'?await captureShot():a.tool==='goto'?await gotoUrl(a.text):a.tool==='nav-history'?await navHistory(a.text):await execAction(activeTabId,activeDocumentId,snapshot,a);
       results.push(r);
       onEvent?.({type:'action',step,text:r.tool+' '+(r.ref||'')+': '+(r.ok?'ok'+(r.detail?' — '+r.detail:''):'FAILED — '+r.error)});
       if(!r.ok) break;
-      if(a.tool==='read-tab'&&r.ok&&r.detail!=='already reading this tab'){
+      // Any navigation (tab switch, goto, back/forward) invalidates every ref the model saw, so it ends the step like read-tab.
+      const endsStep=r.ok&&(a.tool==='goto'||a.tool==='nav-history'||(a.tool==='read-tab'&&r.detail!=='already reading this tab'));
+      if(endsStep){
         const left=parsed.actions.length-results.length;
-        if(left) results.push({tool:'deferred',ref:'',ok:false,error:'The tab switch ended this step. The '+left+' remaining action(s) were not run: their refs belong to the previous page and do not exist here. Re-propose them against the new snapshot.'});
+        if(left) results.push({tool:'deferred',ref:'',ok:false,error:'The navigation ended this step. The '+left+' remaining action(s) were not run: their refs belong to the previous page and do not exist here. Re-propose them against the new snapshot.'});
         break;
       }
     }
     stepResults=results;
-    const switched=results.some(r=>r.tool==='read-tab'&&r.ok&&r.detail!=='already reading this tab');
-    if(!switched){
+    const navigated=results.some(r=>r.ok&&(r.tool==='goto'||r.tool==='nav-history'||(r.tool==='read-tab'&&r.detail!=='already reading this tab')));
+    if(!navigated){
       if(results.some(r=>r.tool==='snapshot'&&r.ok)){
         snap=await takeSnapshot(activeTabId);
         snapshot=snap.snapshot; activeDocumentId=snap.documentId;
       } else {
         try{ const s2=await takeSnapshot(activeTabId); snapshot=s2.snapshot; activeDocumentId=s2.documentId; }
-        catch(e){ await syncOrigin(); history.push({role:'assistant',content:raw},{role:'user',content:'Post-action snapshot failed: '+e.message+(stepShots.length?' A screenshot captured this step was also dropped; capture again once the page settles.':'')}); continue; }
+        catch(e){
+          await syncOrigin();
+          // The step's own results (e.g. a denied site grant on nav-history) must reach the model even when the re-snapshot fails.
+          const sr=stepResults.length?'\nStep results: '+stepResults.map(r=>'- '+r.tool+' '+(r.ref||'')+': '+(r.ok?'ok':'FAILED — '+r.error)).join('\n'):'';
+          history.push({role:'assistant',content:raw},{role:'user',content:'Post-action snapshot failed: '+e.message+sr+(stepShots.length?' A screenshot captured this step was also dropped; capture again once the page settles.':'')});
+          continue;
+        }
       }
     }
     await syncOrigin();
     transcript.push('[step '+step+'] '+desc+'\n'+results.map(r=>'- '+r.tool+' '+(r.ref||'')+': '+(r.ok?'ok':'FAILED — '+r.error)).join('\n'));
     history.push({role:'assistant',content:raw});
     let observation=buildAgentObservation(snapshot,stepResults,tabRefs);
-    if(stepShots.length&&switched){
-      // The capture predates the switch and shows the previous page; attaching it to this observation would misattribute it.
-      observation+='\nA screenshot captured before the tab switch was discarded (it showed the previous page). Capture again on the current page if you need it.';
+    if(stepShots.length&&navigated){
+      // The capture predates the navigation and shows the previous page; attaching it to this observation would misattribute it.
+      observation+='\nA screenshot captured before the navigation was discarded (it showed the previous page). Capture again on the current page if you need it.';
       history.push({role:'user',content:observation});
     }else if(stepShots.length){
       // Earlier step images are pruned so an eight-step run cannot stack captures past the request budget.

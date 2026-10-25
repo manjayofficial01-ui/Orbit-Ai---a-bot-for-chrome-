@@ -1,10 +1,10 @@
 # Verified test results
 
-Last verified: 2026-10-26 (modernization cycle 4 — v2.5.0 automatic active-tab context, branch `modernization/2026-10-26-c4`).
+Last verified: 2026-10-26 (modernization cycle 5 — v2.6.0 navigation core, branch `modernization/2026-10-26-c5`).
 
 - Build: `npm run build` copies 10 extension modules, `src/manifest.json` and the native-host installer into `dist/` — passed. `index.html` and `styles.css` still live only in `dist/` and are edited there (see README).
 - Node syntax checks (`npm run check`): dist/app.js, core.js, page-access.js, agent.js, agent-run.js, background.js, reach-core.js, reach-client.js, research-protocol.js, research-loop.js — all passed; `python -m py_compile` on both native-host files — passed (exit 0).
-- Node built-in test suite: **114 passed, 0 failed** (core, agent, agent-loop, reach-core, research-loop, research-panel, a11y-static, hardening-static).
+- Node built-in test suite: **122 passed, 0 failed** (core, agent, agent-loop, reach-core, research-loop, research-panel, a11y-static, hardening-static).
 - Python native-bridge suite: **12 passed, 0 failed** (`python -m unittest discover -s native-host/tests`).
 - src↔dist parity: all 13 built artifacts byte-identical (`cmp`).
 - Secret scan across src, dist, native-host, scripts, tests and docs: clean.
@@ -15,6 +15,13 @@ Last verified: 2026-10-26 (modernization cycle 4 — v2.5.0 automatic active-tab
 - Not covered by automated tests (unchanged from cycle 2): real-Chrome `captureVisibleTab` pixels, permission prompts, live provider vision round-trips, rendered dialog behavior — see MANUAL-QA 31–35.
 - New in cycle 4 (demonstrated **failing on the pre-change `src/app.js`**, then passing):
   - `hardening-static` — active-tab context is automatic: the keyword heuristic is gone; the auto-read is gated only on the Settings toggle, an already-attached reference, and Orbit's own workspace tab; `send()` runs it before building the message; the no-context system prompt explains grant-and-resend and routes interaction requests to Agent mode.
+
+- New in cycle 5 (demonstrated **failing on the pre-change sources**, then passing):
+  - `agent` — goto/nav-history destination validation (http(s)-only, no credentials, no ref, back/forward only) and Enter accepted by `press` with the submit warning present in the approval description (and absent for Tab); the operator-loop system prompt lines.
+  - `agent-loop` — goto navigates exactly once with the destination URL in the approval dialog and defers batched actions; nav-history goes back and reads the previous page without opening URLs; a denied destination grant blocks goto before any navigation.
+  - `hardening-static` — the goto grant must be settled before `chrome.tabs.update`, denied grants abort, credential URLs are refused, and goto/nav-history must end the step like read-tab; the syncOrigin gate now also requires the two new v2.6.0 refresh sites (count ≥ 4); and the in-page key executor allowlist must match the agent tool's key list exactly (review F1 gate).
+  - Post-review remediation (each demonstrated failing on reverse-patched pre-fix sources): goto must reject a still-committed previous document as the destination (commit wait + per-snapshot origin check — review F2); a denied nav-history origin's step result must reach the model even when the re-snapshot fails (review B1).
+  - Test-infra fix found by the new tests: the harness `tabs.update` mock mutated the shared TAB_A fixture across tests; fixtures are copied per harness now.
 
 ## Previous: cycle 2 (2026-10-25)
 

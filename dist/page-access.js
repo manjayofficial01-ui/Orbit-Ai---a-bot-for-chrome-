@@ -208,7 +208,7 @@ export async function agentAct(token,action,expectedURL){
   const st=globalThis.__orbitPageEdit;
   if(!st||st.token!==token||st.url!==location.href||location.href!==expectedURL) return {ok:false,error:'Page changed. Take a fresh snapshot.'};
   if(!action||typeof action!=='object') return {ok:false,error:'Bad action.'};
-  const KEYS=['Tab','Escape','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'];
+  const KEYS=['Tab','Escape','Enter','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'];
   const clip=(s,n=90)=>String(s??'').replace(/\s+/g,' ').trim().slice(0,n);
   const visible=e=>!!(e.getClientRects().length);
   const sens=e=>/password|passwd|credit|cc-|card|cvc|cvv|otp|one-time|secret|token|api.?key/i.test([e.autocomplete,e.name,e.id,e.getAttribute&&e.getAttribute('aria-label')].join(' '));
@@ -334,6 +334,11 @@ export async function agentAct(token,action,expectedURL){
     }
     return {ok:false,error:'Unknown tool.'};
   }catch(e){ return {ok:false,tool:action.tool,ref:action.ref,error:String(e&&e.message||e).slice(0,300)}; }
+}
+export function navHistoryStep(dir){
+  if(dir==='back')history.back();
+  else if(dir==='forward')history.forward();
+  return {ok:true,dir:dir==='forward'?'forward':'back'};
 }
 export function digestScan(){
   let text='';

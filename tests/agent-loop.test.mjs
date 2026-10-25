@@ -6,9 +6,11 @@ const CFG={base:'https://api.test/v1',model:'m',format:'chat',temperature:'',max
 const fence=o=>'```orbit-actions\n'+JSON.stringify(o)+'\n```';
 
 // Drives runAgentLoop against a scripted Chrome, provider and confirm() so loop control flow is testable outside a browser.
-function harness({tabs,pageUrls,act,cancelAt=-1,throwOnAct=false,replies=[],tabUrls=[],snapshotFailsAfter=Infinity,format='chat'}){
-  const seen={confirms:[],act:[],snapshots:0,bodies:[],events:[],captures:[]};
-  let replyIndex=0,snapshotIndex=0,tabGetIndex=0;
+function harness({tabs,pageUrls,act,cancelAt=-1,throwOnAct=false,replies=[],tabUrls=[],snapshotFailsAfter=Infinity,format='chat',denyOrigins=[],navSequence=[]}){
+  // Copy the fixtures: tabs.update mutates the tab record, and the module-level TAB_A/TAB_B must not leak between tests.
+  tabs=tabs.map(t=>({...t}));
+  const seen={confirms:[],act:[],snapshots:0,bodies:[],events:[],captures:[],updates:[],history:[]};
+  let replyIndex=0,snapshotIndex=0,tabGetIndex=0,navUrl=null,navCount=0;
   const originals={chrome:globalThis.chrome,location:globalThis.location,confirm:globalThis.confirm,fetch:globalThis.fetch};
   const page=i=>{const url=pageUrls[Math.min(i,pageUrls.length-1)];return {title:'Page '+url,url,text:'body text',token:'tk-'+url,fields:[{id:'0',label:'Query',kind:'input',length:0,value:''}],interactives:[{ref:'e0',role:'button',name:'Go'}]};};
   globalThis.location={href:'chrome-extension://test/index.html'};
@@ -17,9 +19,15 @@ function harness({tabs,pageUrls,act,cancelAt=-1,throwOnAct=false,replies=[],tabU
       async query(q){ if(q&&q.active) return tabs.filter(t=>t.active); return tabs.map(t=>({...t})); },
       async get(id){
         const t=tabs.find(x=>x.id===id); if(!t) throw Error('No tab with id: '+id);
-        // Chrome updates the tab record on navigation, so the mock does the same per call.
+        // Chrome updates the tab record on navigation, so the mock does the same per call; scripted navigations pin the URL.
+        if(navUrl!==null) return {...t,url:navUrl};
         if(!tabUrls.length) return {...t};
         return {...t,url:tabUrls[Math.min(tabGetIndex++,tabUrls.length-1)]};
+      },
+      async update(id,props){
+        const t=tabs.find(x=>x.id===id); if(!t) throw Error('No tab with id: '+id);
+        if(props?.url){t.url=props.url;navUrl=props.url;seen.updates.push({id,url:props.url});}
+        return {...t,url:navUrl!==null?navUrl:t.url};
       },
       async captureVisibleTab(windowId,opts){ seen.captures.push({windowId,opts}); return 'data:image/jpeg;base64,TESTSHOT'; }
     },
@@ -28,6 +36,11 @@ function harness({tabs,pageUrls,act,cancelAt=-1,throwOnAct=false,replies=[],tabU
         if(func.name==='snapshotPage'){
           if(seen.snapshots>=snapshotFailsAfter) throw Error('Cannot access a chrome:// URL');
           seen.snapshots++; return [{result:page(seen.snapshots-1),documentId:'doc-'+target.tabId}];
+        }
+        if(func.name==='navHistoryStep'){
+          seen.history.push(args[0]);
+          if(navSequence.length)navUrl=navSequence[Math.min(navCount++,navSequence.length-1)];
+          return [{result:{ok:true,dir:args[0]}}];
         }
         if(func.name==='agentAct'){
           seen.act.push({tabId:target.tabId,action:args[1]});
@@ -38,7 +51,7 @@ function harness({tabs,pageUrls,act,cancelAt=-1,throwOnAct=false,replies=[],tabU
         throw Error('Unexpected injected function '+func.name);
       }
     },
-    permissions:{async request(){return true;},async contains(){return true;}}
+    permissions:{async request({origins}){return !origins.some(o=>denyOrigins.includes(o));},async contains({origins}){return !origins.some(o=>denyOrigins.includes(o));}}
   };
   globalThis.confirm=message=>{ seen.confirms.push(message); return seen.confirms.length-1!==cancelAt; };
   globalThis.fetch=async(_url,options)=>{
@@ -284,5 +297,84 @@ test('the responses format attaches the capture as input_image parts',async()=>{
     assert.ok(Array.isArray(last));
     assert.ok(last.some(p=>p.type==='input_text'&&/screenshot captured this step/.test(p.text)));
     assert.deepEqual(last.filter(p=>p.type==='input_image').map(p=>p.image_url),['data:image/jpeg;base64,TESTSHOT']);
+  } finally { h.restore(); }
+});
+
+test('goto navigates with the destination in the approval and ends the step',async()=>{
+  const h=harness({tabs:[TAB_A],pageUrls:['https://a.test/one','https://b.test/landing'],replies:[
+    fence({actions:[{tool:'goto',text:'https://b.test/landing'},{tool:'click',ref:'e0'}]}),
+    fence({actions:[{tool:'done',text:'ok'}]})
+  ]});
+  try{
+    const res=await h.run();
+    assert.equal(res.done,true);
+    assert.equal(h.seen.updates.length,1,'exactly one navigation');
+    assert.equal(h.seen.updates[0].url,'https://b.test/landing');
+    assert.equal(h.seen.act.length,0,'actions batched after a navigation must be deferred, not run against stale refs');
+    assert.match(h.seen.confirms[0],/go to https:\/\/b\.test\/landing/,'the approval dialog must show the destination URL');
+    const last=h.seen.bodies.at(-1).messages.at(-1).content;
+    assert.match(last,/b\.test/,'the next observation must be the destination page');
+    assert.match(last,/belong to the previous page/,'the model must be told the batched action was deferred');
+    assert.equal(res.url,'https://b.test/landing');
+  } finally { h.restore(); }
+});
+
+test('nav-history goes back, grants nothing extra, and reads the previous page',async()=>{
+  const h=harness({tabs:[TAB_A],pageUrls:['https://a.test/one','https://b.test/back'],navSequence:['https://b.test/back'],replies:[
+    fence({actions:[{tool:'nav-history',text:'back'}]}),
+    fence({actions:[{tool:'done',text:'ok'}]})
+  ]});
+  try{
+    const res=await h.run();
+    assert.equal(res.done,true);
+    assert.deepEqual(h.seen.history,['back']);
+    assert.equal(h.seen.updates.length,0,'history navigation must not open new URLs');
+    assert.equal(h.seen.act.length,0);
+    assert.match(h.seen.bodies.at(-1).messages.at(-1).content,/b\.test\/back/);
+    assert.equal(res.url,'https://b.test/back');
+  } finally { h.restore(); }
+});
+
+test('a denied destination grant blocks goto before any navigation',async()=>{
+  const h=harness({tabs:[TAB_A],pageUrls:['https://a.test/one'],denyOrigins:['https://b.test/*'],replies:[
+    fence({actions:[{tool:'goto',text:'https://b.test/landing'}]}),
+    fence({actions:[{tool:'done',text:'ok'}]})
+  ]});
+  try{
+    const res=await h.run();
+    assert.equal(res.done,true);
+    assert.equal(h.seen.updates.length,0,'no navigation may happen without the destination grant');
+    assert.match(h.seen.bodies.at(-1).messages.at(-1).content,/was not granted; nothing was opened/);
+    assert.equal(res.url,'https://a.test/one','the target tab is unchanged');
+  } finally { h.restore(); }
+});
+
+test('goto never accepts the previous document as the destination',async()=>{
+  // Models the F2 race: tabs.update resolves at navigation start, so the first readable snapshot is still the old page.
+  const h=harness({tabs:[TAB_A],pageUrls:['https://a.test/one','https://a.test/one','https://b.test/landing'],replies:[
+    fence({actions:[{tool:'goto',text:'https://b.test/landing'}]}),
+    fence({actions:[{tool:'done',text:'ok'}]})
+  ]});
+  try{
+    const res=await h.run();
+    assert.equal(res.done,true);
+    assert.equal(h.seen.snapshots,3,'the stale first post-navigation snapshot must be rejected and retried');
+    const last=h.seen.bodies.at(-1).messages.at(-1).content;
+    assert.match(last,/b\.test/,'the observation must describe the destination');
+    assert.equal(res.url,'https://b.test/landing');
+  } finally { h.restore(); }
+});
+
+test('a denied nav-history origin reaches the model even when the re-snapshot fails',async()=>{
+  const h=harness({tabs:[TAB_A],pageUrls:['https://a.test/one'],snapshotFailsAfter:1,denyOrigins:['https://b.test/*'],navSequence:['https://b.test/back'],replies:[
+    fence({actions:[{tool:'nav-history',text:'back'}]}),
+    fence({actions:[{tool:'done',text:'ok'}]})
+  ]});
+  try{
+    const res=await h.run();
+    assert.equal(res.done,true);
+    const last=h.seen.bodies.at(-1).messages.at(-1).content;
+    assert.match(last,/Post-action snapshot failed/);
+    assert.match(last,/Site access for b\.test was not granted; the page opened but was not read/,'the step result must not be swallowed by the snapshot failure (review B1)');
   } finally { h.restore(); }
 });
