@@ -5,11 +5,12 @@ import {readFile} from 'node:fs/promises';
 // Static regression gates for fixes that live in browser-only code paths (no DOM/Chrome runtime here).
 // They lock the source shape that makes the behaviour safe; live behaviour is covered by docs/MANUAL-QA.md.
 const root=new URL('../',import.meta.url);
-const [app,background,pageAccess,agentRun]=await Promise.all([
+const [app,background,pageAccess,agentRun,manifest]=await Promise.all([
   readFile(new URL('src/app.js',root),'utf8'),
   readFile(new URL('src/background.js',root),'utf8'),
   readFile(new URL('src/page-access.js',root),'utf8'),
-  readFile(new URL('src/agent-run.js',root),'utf8')
+  readFile(new URL('src/agent-run.js',root),'utf8'),
+  readFile(new URL('src/manifest.json',root),'utf8')
 ]);
 
 test('boot survives an unavailable storage access-level API',()=>{
@@ -146,4 +147,19 @@ test('navigation tools are grant-gated and end their step',()=>{
 test('the in-page key executor allows exactly what the agent tool validates',()=>{
   assert.match(pageAccess,/const KEYS=\['Tab','Escape','Enter','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'\];/,
     'agentAct must execute every key AGENT_KEYS validates — a mismatch makes the approval dialog promise keys the page refuses (review F1)');
+});
+
+test('captures use the shared ask-once blanket-access helper',()=>{
+  assert.match(agentRun,/captureVisibleTabImage\(t\.windowId\)/);
+  assert.doesNotMatch(agentRun,/chrome\.tabs\.captureVisibleTab\(/,'the agent must go through the shared ask-once helper');
+  assert.match(pageAccess,/origins:\['<all_urls>'\]/,'the helper requests blanket access at the moment of failure');
+  assert.match(pageAccess,/activeTab\|all_urls/,'the retry must trigger only on the permission error');
+  assert.match(pageAccess,/Screenshots need one-time all-sites access/,'a declined grant must explain the honest path');
+});
+
+test('all-sites access stays optional and requestable for captures only',()=>{
+  assert.match(manifest,/"optional_host_permissions":\s*\[\s*"<all_urls>"/,'<all_urls> must be listed as an optional host so it can be requested at capture time');
+  const perms=/"permissions":\s*\[([^\]]*)\]/.exec(manifest)?.[1]||'';
+  assert.ok(!perms.includes('all_urls'),'<all_urls> must never be a required permission');
+  assert.ok(!perms.includes('host_permissions'),'host access must never be required');
 });

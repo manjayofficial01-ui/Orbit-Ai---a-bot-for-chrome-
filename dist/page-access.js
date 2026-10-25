@@ -377,6 +377,24 @@ export async function quickPageReference(depth='balanced'){
  return {title:snapshot.title||active.title||'Active page',url:snapshot.url||active.url,text:String(snapshot.text||'').slice(0,limits[depth]||16000),kind:'text'};
 }
 
+export async function captureVisibleTabImage(windowId){
+ let dataUrl;
+ try{dataUrl=await chrome.tabs.captureVisibleTab(windowId,{format:'jpeg',quality:82});}
+ catch(e){
+  const msg=String(e&&e.message||e);
+  // Chrome's capture API ignores per-origin grants: it accepts only a fresh activeTab gesture or all-sites host access.
+  if(/activeTab|all_urls/i.test(msg)){
+   let blanket=false;
+   try{blanket=await chrome.permissions.request({origins:['<all_urls>']});}catch{}
+   if(!blanket)throw Error('Screenshots need one-time all-sites access, which Chrome requires for captures. Retry from the Screenshot button and approve the Chrome prompt — or click the Orbit toolbar icon on the page, then retry.');
+   try{dataUrl=await chrome.tabs.captureVisibleTab(windowId,{format:'jpeg',quality:82});}
+   catch(e2){throw Error('Screenshot capture failed. Click the Orbit toolbar icon on the page, then retry. '+String(e2&&e2.message||e2));}
+  }else throw Error('Screenshot capture failed. Click the Orbit toolbar icon on the page, then retry. '+msg);
+ }
+ if(typeof dataUrl!=='string'||!dataUrl.startsWith('data:image/'))throw Error('Chrome did not return a screenshot.');
+ return dataUrl;
+}
+
 export async function captureActiveScreenshot(){
  const active=(await chrome.tabs.query({active:true,lastFocusedWindow:true}))[0];
  if(!active?.id||!active.url) throw Error('No active webpage found.');
@@ -386,10 +404,7 @@ export async function captureActiveScreenshot(){
   const granted=await chrome.permissions.request({origins:[pattern]});
   if(!granted) throw Error('Site access was not granted.');
  }
- let dataUrl;
- try{dataUrl=await chrome.tabs.captureVisibleTab(active.windowId,{format:'jpeg',quality:82});}
- catch(e){throw Error('Screenshot capture failed. Click the Orbit toolbar icon on the target page, then try again. '+e.message);}
- if(typeof dataUrl!=='string'||!dataUrl.startsWith('data:image/'))throw Error('Chrome did not return a screenshot.');
+ const dataUrl=await captureVisibleTabImage(active.windowId);
  if(dataUrl.length>3500000)throw Error('Screenshot is too large to attach. Reduce browser zoom or window size.');
  return {title:active.title||'Active page',url:active.url,dataUrl,kind:'screenshot'};
 }

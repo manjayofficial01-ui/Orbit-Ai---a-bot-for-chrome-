@@ -1,4 +1,4 @@
-# Modernization Roadmap — after cycle 5 (2026-10-26)
+# Modernization Roadmap — after cycle 6 (2026-10-26)
 
 Legend: done ✓ | next | later | rejected (reason)
 
@@ -6,6 +6,7 @@ Legend: done ✓ | next | later | rejected (reason)
 - (none open)
 
 ## P1 — High impact
+- ✓ FIX-001 (cycle 6, v2.6.1) capture permission flow: Chrome's captureVisibleTab ignores per-origin grants (the owner hit the "Either '&lt;all_urls&gt;' or 'activeTab' permission is required" error live); `<all_urls>` added as optional-only, requested once contextually when a capture is refused, with a single retry and an honest decline message. Both capture paths (buttons + agent tool) share the helper. 4 fail-first tests; MANUAL-QA 43.
 - ✓ FEAT-003 (cycle 5, v2.6.0) browser-use-grade navigation core: `goto` (http(s)-only, credential-free, destination URL in the approval dialog, site grant settled before navigating, ~8 s readable-wait), `nav-history` (back/forward), and Enter added to `press` with an explicit "can submit the focused form" approval warning — closing the documented "Enter is never synthesised" ceiling at the owner's request while keeping per-step approval and no auto-submit. Every navigation ends its step (goto/nav-history join read-tab in the anti-stale-ref rule). System prompt reframed as an observe/navigate/act/verify operator loop. 6 fail-first tests + 2 gates; MANUAL-QA 39–42 for live Chrome.
 - ✓ FEAT-002 (cycle 4, v2.5.0) automatic active-tab context: the keyword heuristic ("this page" matched, "this post" didn't → model nagged "use Add page") is gone; every message now auto-attaches a fresh snapshot of the active tab (default on, off in Settings → Context, skipped when something else is attached or the active tab is Orbit's own workspace). No-context fallback rewritten to explain the grant-and-resend fix and route interaction requests to Agent mode. Verified by a fail-first hardening gate; live flow in MANUAL-QA 36–38.
 - ✓ FEAT-001 (cycle 3, v2.4.0) active-tab screenshot & analysis: one-click **Analyze now** on the reviewed screenshot in chat, plus an agent `screenshot` tool that attaches the visible page as vision content behind the per-step gate; refuses to capture a non-visible tab, bounds step captures (2 / ~3 MB) and prunes earlier images. Verified by 5 fail-first tests (110 Node); live-Chrome behavior routed to MANUAL-QA 31–35.

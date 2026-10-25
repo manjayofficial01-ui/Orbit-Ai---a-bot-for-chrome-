@@ -1,10 +1,10 @@
 # Verified test results
 
-Last verified: 2026-10-26 (modernization cycle 5 — v2.6.0 navigation core, branch `modernization/2026-10-26-c5`).
+Last verified: 2026-10-26 (modernization cycle 6 — v2.6.1 capture permission fix, branch `modernization/2026-10-26-c6`).
 
 - Build: `npm run build` copies 10 extension modules, `src/manifest.json` and the native-host installer into `dist/` — passed. `index.html` and `styles.css` still live only in `dist/` and are edited there (see README).
 - Node syntax checks (`npm run check`): dist/app.js, core.js, page-access.js, agent.js, agent-run.js, background.js, reach-core.js, reach-client.js, research-protocol.js, research-loop.js — all passed; `python -m py_compile` on both native-host files — passed (exit 0).
-- Node built-in test suite: **122 passed, 0 failed** (core, agent, agent-loop, reach-core, research-loop, research-panel, a11y-static, hardening-static).
+- Node built-in test suite: **126 passed, 0 failed** (core, agent, agent-loop, reach-core, research-loop, research-panel, a11y-static, hardening-static).
 - Python native-bridge suite: **12 passed, 0 failed** (`python -m unittest discover -s native-host/tests`).
 - src↔dist parity: all 13 built artifacts byte-identical (`cmp`).
 - Secret scan across src, dist, native-host, scripts, tests and docs: clean.
@@ -15,6 +15,10 @@ Last verified: 2026-10-26 (modernization cycle 5 — v2.6.0 navigation core, bra
 - Not covered by automated tests (unchanged from cycle 2): real-Chrome `captureVisibleTab` pixels, permission prompts, live provider vision round-trips, rendered dialog behavior — see MANUAL-QA 31–35.
 - New in cycle 4 (demonstrated **failing on the pre-change `src/app.js`**, then passing):
   - `hardening-static` — active-tab context is automatic: the keyword heuristic is gone; the auto-read is gated only on the Settings toggle, an already-attached reference, and Orbit's own workspace tab; `send()` runs it before building the message; the no-context system prompt explains grant-and-resend and routes interaction requests to Agent mode.
+
+- New in cycle 6 (demonstrated **failing on the pre-change sources**, then passing):
+  - `agent-loop` — a permission-refused capture requests `<all_urls>` once at the moment of failure and retries (image still attaches); declining reports the honest path with no retry loop.
+  - `hardening-static` — the agent capture path must use the shared ask-once helper (no raw `captureVisibleTab` in agent-run.js); `<all_urls>` must be optional in the manifest and absent from required permissions.
 
 - New in cycle 5 (demonstrated **failing on the pre-change sources**, then passing):
   - `agent` — goto/nav-history destination validation (http(s)-only, no credentials, no ref, back/forward only) and Enter accepted by `press` with the submit warning present in the approval description (and absent for Tab); the operator-loop system prompt lines.

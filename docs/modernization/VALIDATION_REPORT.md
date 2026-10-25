@@ -1,3 +1,22 @@
+# Validation Report — cycle 6 — 2026-10-26 — fix: capture permission flow (v2.6.1)
+
+Baseline = commit `fbb6a9e` (v2.6.0, main); after = the v2.6.1 tree on branch `modernization/2026-10-26-c6`.
+
+| Metric | Baseline (fbb6a9e) | After (v2.6.1) |
+|---|---|---|
+| `npm run check` | ✅ exit 0 | ✅ exit 0 |
+| Node tests | 122 / 0 fail | **126 / 0 fail** |
+| Python bridge tests | 12 / 0 fail | 12 / 0 fail |
+| src↔dist parity | 13/13 | 13/13 byte-identical |
+| Manifest | 7 permissions + optional hosts | permissions **unchanged**; optional hosts + `<all_urls>` (optional only) |
+| New tests fail-first | — | 2 loop tests failed on HEAD dist sources; both hardening gates failed on HEAD src/manifest |
+
+Behavioral coverage: a permission-refused capture asks for `<all_urls>` exactly once at the moment of failure and retries successfully (image still attaches); declining produces the honest one-time-all-sites message with no retry loop. Gates: the agent path must use the shared helper (no raw `captureVisibleTab` in agent-run), and `<all_urls>` must remain optional, never required.
+
+Not verified here: the real Chrome prompt cadence and capture-after-grant against live pixels — MANUAL-QA 43.
+
+---
+
 # Validation Report — cycle 5 — 2026-10-26 — feature: browser-use-grade navigation core (v2.6.0)
 
 Baseline = commit `b3cc9ae` (v2.5.0, main); after = the v2.6.0 feature tree on branch `modernization/2026-10-26-c5`.

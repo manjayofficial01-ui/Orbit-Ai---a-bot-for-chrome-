@@ -1,4 +1,4 @@
-import {pageOrigin,targetTabs,snapshotPage,agentAct,navHistoryStep} from './page-access.js';
+import {pageOrigin,targetTabs,snapshotPage,agentAct,navHistoryStep,captureVisibleTabImage} from './page-access.js';
 import {generateOnce} from './core.js';
 import {AGENT_MAX_STEPS,AGENT_PROTOCOL_RETRIES,buildAgentSystemPrompt,buildAgentObservation,parseAgentActions,stripAgentFence,describeActions} from './agent.js';
 
@@ -138,8 +138,7 @@ export async function runAgentLoop({cfg,key,goal,onEvent,signal}){
     try{
       const t=await chrome.tabs.get(activeTabId);
       if(t.active===false) return {tool:'screenshot',ok:false,error:'The target tab is not the visible tab of its window, so a capture would show a different page. Make the tab visible, then retry.'};
-      const dataUrl=await chrome.tabs.captureVisibleTab(t.windowId,{format:'jpeg',quality:82});
-      if(typeof dataUrl!=='string'||!dataUrl.startsWith('data:image/')) return {tool:'screenshot',ok:false,error:'Chrome returned no screenshot.'};
+      const dataUrl=await captureVisibleTabImage(t.windowId);
       if(dataUrl.length>3500000) return {tool:'screenshot',ok:false,error:'Screenshot is too large; shrink the window or zoom, then retry.'};
       if(stepShots.length>=2||stepShotBytes+dataUrl.length>3000000) return {tool:'screenshot',ok:false,error:'Only up to two captures (3 MB total) attach per step; work from the attached image.'};
       stepShots.push(dataUrl);stepShotBytes+=dataUrl.length;

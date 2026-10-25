@@ -6,10 +6,10 @@ const CFG={base:'https://api.test/v1',model:'m',format:'chat',temperature:'',max
 const fence=o=>'```orbit-actions\n'+JSON.stringify(o)+'\n```';
 
 // Drives runAgentLoop against a scripted Chrome, provider and confirm() so loop control flow is testable outside a browser.
-function harness({tabs,pageUrls,act,cancelAt=-1,throwOnAct=false,replies=[],tabUrls=[],snapshotFailsAfter=Infinity,format='chat',denyOrigins=[],navSequence=[]}){
+function harness({tabs,pageUrls,act,cancelAt=-1,throwOnAct=false,replies=[],tabUrls=[],snapshotFailsAfter=Infinity,format='chat',denyOrigins=[],navSequence=[],capturePermissionError=false}){
   // Copy the fixtures: tabs.update mutates the tab record, and the module-level TAB_A/TAB_B must not leak between tests.
   tabs=tabs.map(t=>({...t}));
-  const seen={confirms:[],act:[],snapshots:0,bodies:[],events:[],captures:[],updates:[],history:[]};
+  const seen={confirms:[],act:[],snapshots:0,bodies:[],events:[],captures:[],updates:[],history:[],requested:[]};
   let replyIndex=0,snapshotIndex=0,tabGetIndex=0,navUrl=null,navCount=0;
   const originals={chrome:globalThis.chrome,location:globalThis.location,confirm:globalThis.confirm,fetch:globalThis.fetch};
   const page=i=>{const url=pageUrls[Math.min(i,pageUrls.length-1)];return {title:'Page '+url,url,text:'body text',token:'tk-'+url,fields:[{id:'0',label:'Query',kind:'input',length:0,value:''}],interactives:[{ref:'e0',role:'button',name:'Go'}]};};
@@ -29,7 +29,12 @@ function harness({tabs,pageUrls,act,cancelAt=-1,throwOnAct=false,replies=[],tabU
         if(props?.url){t.url=props.url;navUrl=props.url;seen.updates.push({id,url:props.url});}
         return {...t,url:navUrl!==null?navUrl:t.url};
       },
-      async captureVisibleTab(windowId,opts){ seen.captures.push({windowId,opts}); return 'data:image/jpeg;base64,TESTSHOT'; }
+      async captureVisibleTab(windowId,opts){
+        seen.captures.push({windowId,opts});
+        // Models Chrome refusing captures without activeTab or all-sites access until the blanket grant is requested.
+        if(capturePermissionError&&!seen.requested.includes('<all_urls>'))throw Error("Either the '<all_urls>' or 'activeTab' permission is required.");
+        return 'data:image/jpeg;base64,TESTSHOT';
+      }
     },
     scripting:{
       async executeScript({target,func,args}){
@@ -51,7 +56,7 @@ function harness({tabs,pageUrls,act,cancelAt=-1,throwOnAct=false,replies=[],tabU
         throw Error('Unexpected injected function '+func.name);
       }
     },
-    permissions:{async request({origins}){return !origins.some(o=>denyOrigins.includes(o));},async contains({origins}){return !origins.some(o=>denyOrigins.includes(o));}}
+    permissions:{async request({origins}){seen.requested.push(...origins);return !origins.some(o=>denyOrigins.includes(o));},async contains({origins}){return !origins.some(o=>denyOrigins.includes(o));}}
   };
   globalThis.confirm=message=>{ seen.confirms.push(message); return seen.confirms.length-1!==cancelAt; };
   globalThis.fetch=async(_url,options)=>{
@@ -376,5 +381,33 @@ test('a denied nav-history origin reaches the model even when the re-snapshot fa
     const last=h.seen.bodies.at(-1).messages.at(-1).content;
     assert.match(last,/Post-action snapshot failed/);
     assert.match(last,/Site access for b\.test was not granted; the page opened but was not read/,'the step result must not be swallowed by the snapshot failure (review B1)');
+  } finally { h.restore(); }
+});
+
+test('a capture refused without all-sites access asks once, then retries',async()=>{
+  const h=harness({tabs:[TAB_A],pageUrls:['https://a.test/one'],capturePermissionError:true,replies:[
+    fence({actions:[{tool:'screenshot'}]}),
+    fence({actions:[{tool:'done',text:'ok'}]})
+  ]});
+  try{
+    const res=await h.run();
+    assert.equal(res.done,true);
+    assert.equal(h.seen.requested.filter(o=>o==='<all_urls>').length,1,'the blanket grant must be requested exactly once');
+    assert.equal(h.seen.captures.length,2,'exactly one capture attempt and one retry');
+    const last=h.seen.bodies.at(-1).messages.at(-1).content;
+    assert.ok(Array.isArray(last)&&last.some(p=>p.type==='image_url'),'the retried capture must still attach to the observation');
+  } finally { h.restore(); }
+});
+
+test('declining all-sites access reports the honest path and does not retry',async()=>{
+  const h=harness({tabs:[TAB_A],pageUrls:['https://a.test/one'],capturePermissionError:true,denyOrigins:['<all_urls>'],replies:[
+    fence({actions:[{tool:'screenshot'}]}),
+    fence({actions:[{tool:'done',text:'ok'}]})
+  ]});
+  try{
+    const res=await h.run();
+    assert.equal(res.done,true);
+    assert.equal(h.seen.captures.length,1,'no retry without the grant');
+    assert.match(h.seen.bodies.at(-1).messages.at(-1).content,/one-time all-sites access/);
   } finally { h.restore(); }
 });

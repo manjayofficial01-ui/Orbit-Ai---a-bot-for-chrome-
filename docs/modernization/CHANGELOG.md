@@ -1,5 +1,14 @@
 # Modernization Changelog
 
+## Cycle 6 — 2026-10-26 — fix: capture permission flow — v2.6.1 — branch `modernization/2026-10-26-c6`
+
+Trigger: the owner hit "Either the '<all_urls>' or 'activeTab' permission is required" on a live capture. Root cause: Chrome's `captureVisibleTab` **ignores per-origin grants** — it accepts only a fresh activeTab gesture (toolbar-icon click on that tab) or all-sites host access, so the per-site grant the capture path relied on was never sufficient. The owner chose (asked directly) the one-time contextual all-sites option.
+
+- `<all_urls>` added to `optional_host_permissions` (optional only — never requested at install, never required; a hardening gate pins that).
+- New shared helper `captureVisibleTabImage()` in page-access.js: on Chrome's permission error it requests `<all_urls>` once, contextually, retries the capture a single time, and on decline explains the honest path (approve and retry, or click the Orbit toolbar icon on the page). Both capture paths use it: the Screenshot / Analyze-now buttons and the agent's screenshot tool.
+- Page-text reading, the digest and URL fetch keep using per-origin grants exactly as before; only captures use the blanket grant.
+- Tests 122 → **126 Node** (2 loop tests + 2 hardening gates incl. the manifest optionality gate, all demonstrated fail-first), Python 12 unchanged; check exit 0; parity 13/13; SECURITY.md Permissions + Screenshots sections rewritten; MANUAL-QA 43 added.
+
 ## Cycle 5 — 2026-10-26 — feature: browser-use-grade navigation core — v2.6.0 — branch `modernization/2026-10-26-c5`
 
 Trigger: the owner asked for computer-use/browser-use-style "total control over the active webpage" with real agentic capability. Orbit already had the actuator surface (click/fill/select/scroll/hover/screenshot since v2.3/v2.4); what browser-use has and Orbit lacked was **navigation**. This cycle closes that gap — the right form for an extension that already lives inside Chrome (no vendored Python framework; Orbit *is* the browser driver).
