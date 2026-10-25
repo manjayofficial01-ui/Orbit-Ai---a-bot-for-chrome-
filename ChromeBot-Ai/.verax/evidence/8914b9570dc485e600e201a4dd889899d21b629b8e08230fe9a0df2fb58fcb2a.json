@@ -1,0 +1,365 @@
+{
+  "schema": "verax/evidence/v1",
+  "evidence_id": "8914b9570dc485e600e201a4dd889899d21b629b8e08230fe9a0df2fb58fcb2a",
+  "operation": "inspect_project",
+  "target": {
+    "kind": "project-root",
+    "locator": "D:\\000000 Lab\\project extension\\ChromeBot-Ai"
+  },
+  "observed_at": "2026-10-14T09:15:54.114Z",
+  "result": {
+    "fingerprint": {
+      "manifest": {
+        "manifest_version": 3,
+        "name": "ChromeBot Ai",
+        "version": "4.3.0",
+        "description": "Super-agent crew for Chrome: multi-tab control, approvals, skills, memory, schedules, screenshots and data export. Cline login, NVIDIA NIM, Gemini, OpenAI, Groq, OpenRouter, custom OpenAI-compatible with model fetch + quality + custom headers.",
+        "minimum_chrome_version": "124",
+        "permissions": [
+          "storage",
+          "tabs",
+          "activeTab",
+          "scripting",
+          "sidePanel",
+          "contextMenus",
+          "webNavigation",
+          "clipboardWrite",
+          "downloads",
+          "alarms",
+          "notifications"
+        ],
+        "host_permissions": [
+          "*://*/*"
+        ],
+        "background": {
+          "service_worker": "background.js"
+        },
+        "action": {
+          "default_title": "Open ChromeBot Ai",
+          "default_icon": {
+            "32": "icons/icon32.png"
+          }
+        },
+        "icons": {
+          "16": "icons/icon16.png",
+          "32": "icons/icon32.png",
+          "48": "icons/icon48.png",
+          "128": "icons/icon128.png"
+        },
+        "side_panel": {
+          "default_path": "panel.html"
+        },
+        "content_scripts": [
+          {
+            "matches": [
+              "http://*/*",
+              "https://*/*"
+            ],
+            "js": [
+              "core.js",
+              "page.js",
+              "widget.js"
+            ],
+            "run_at": "document_idle",
+            "all_frames": true
+          }
+        ],
+        "web_accessible_resources": [
+          {
+            "resources": [
+              "panel.html"
+            ],
+            "matches": [
+              "http://*/*",
+              "https://*/*"
+            ]
+          }
+        ],
+        "content_security_policy": {
+          "extension_pages": "script-src 'self'; object-src 'self'"
+        }
+      },
+      "manifest_origin": "manifest.json",
+      "dependencies": {},
+      "dev_dependencies": {},
+      "scripts": {},
+      "entry_points": {},
+      "configs": [],
+      "toolchain": {
+        "node": "v25.8.1",
+        "platform": "win32/x64",
+        "engines": null,
+        "package_manager": null
+      },
+      "git": null,
+      "artifacts": {
+        "dirs": [],
+        "items": []
+      },
+      "file_index": [
+        {
+          "rel": ".workbuddy-ai/memory/2026-10-02.md",
+          "size": 1410,
+          "ext": ".md"
+        },
+        {
+          "rel": "CHANGELOG.md",
+          "size": 4817,
+          "ext": ".md"
+        },
+        {
+          "rel": "avatar.jpg",
+          "size": 259770,
+          "ext": ".jpg"
+        },
+        {
+          "rel": "background.js",
+          "size": 6344,
+          "ext": ".js"
+        },
+        {
+          "rel": "core.js",
+          "size": 40681,
+          "ext": ".js"
+        },
+        {
+          "rel": "crew.js",
+          "size": 6863,
+          "ext": ".js"
+        },
+        {
+          "rel": "icons/icon128.png",
+          "size": 6635,
+          "ext": ".png"
+        },
+        {
+          "rel": "icons/icon16.png",
+          "size": 701,
+          "ext": ".png"
+        },
+        {
+          "rel": "icons/icon32.png",
+          "size": 1603,
+          "ext": ".png"
+        },
+        {
+          "rel": "icons/icon48.png",
+          "size": 2424,
+          "ext": ".png"
+        },
+        {
+          "rel": "manifest.json",
+          "size": 1530,
+          "ext": ".json"
+        },
+        {
+          "rel": "page.js",
+          "size": 17593,
+          "ext": ".js"
+        },
+        {
+          "rel": "panel.css",
+          "size": 29898,
+          "ext": ".css"
+        },
+        {
+          "rel": "panel.html",
+          "size": 12910,
+          "ext": ".html"
+        },
+        {
+          "rel": "panel.js",
+          "size": 61519,
+          "ext": ".js"
+        },
+        {
+          "rel": "readme.md",
+          "size": 7684,
+          "ext": ".md"
+        },
+        {
+          "rel": "research/chromebot-agentic/REPORT.md",
+          "size": 5959,
+          "ext": ".md"
+        },
+        {
+          "rel": "research/chromebot-agentic/brief.md",
+          "size": 3083,
+          "ext": ".md"
+        },
+        {
+          "rel": "research/chromebot-agentic/ui-inspiration-4.3.0.md",
+          "size": 4052,
+          "ext": ".md"
+        },
+        {
+          "rel": "tests/smoke.cjs",
+          "size": 11578,
+          "ext": ".cjs"
+        },
+        {
+          "rel": "tests/stream.cjs",
+          "size": 8986,
+          "ext": ".cjs"
+        },
+        {
+          "rel": "ui.js",
+          "size": 23882,
+          "ext": ".js"
+        },
+        {
+          "rel": "undefinedbody.json",
+          "size": 2993,
+          "ext": ".json"
+        },
+        {
+          "rel": "widget.js",
+          "size": 9646,
+          "ext": ".js"
+        }
+      ],
+      "inventory": {
+        "files": 24,
+        "dirs": 7,
+        "bytes": 532561,
+        "histogram": [
+          {
+            "ext": ".jpg",
+            "count": 1,
+            "bytes": 259770
+          },
+          {
+            "ext": ".js",
+            "count": 7,
+            "bytes": 166528
+          },
+          {
+            "ext": ".css",
+            "count": 1,
+            "bytes": 29898
+          },
+          {
+            "ext": ".md",
+            "count": 6,
+            "bytes": 27005
+          },
+          {
+            "ext": ".cjs",
+            "count": 2,
+            "bytes": 20564
+          },
+          {
+            "ext": ".html",
+            "count": 1,
+            "bytes": 12910
+          },
+          {
+            "ext": ".png",
+            "count": 4,
+            "bytes": 11363
+          },
+          {
+            "ext": ".json",
+            "count": 2,
+            "bytes": 4523
+          }
+        ],
+        "largest": [
+          {
+            "rel": "avatar.jpg",
+            "size": 259770
+          },
+          {
+            "rel": "panel.js",
+            "size": 61519
+          },
+          {
+            "rel": "core.js",
+            "size": 40681
+          },
+          {
+            "rel": "panel.css",
+            "size": 29898
+          },
+          {
+            "rel": "ui.js",
+            "size": 23882
+          },
+          {
+            "rel": "page.js",
+            "size": 17593
+          },
+          {
+            "rel": "panel.html",
+            "size": 12910
+          },
+          {
+            "rel": "tests/smoke.cjs",
+            "size": 11578
+          },
+          {
+            "rel": "widget.js",
+            "size": 9646
+          },
+          {
+            "rel": "tests/stream.cjs",
+            "size": 8986
+          }
+        ]
+      },
+      "fingerprint_digest": "f11d0120733c17cdb0e53b2c7d7cb29b7444a7fa2a53a545b54287c895a625ca"
+    },
+    "facet_count": 10
+  },
+  "coverage": {
+    "scope": "container-entries",
+    "status": "complete",
+    "omitted": []
+  },
+  "limitations": [
+    "npm/yarn/pnpm versions are not observed: reporting them requires executing a process, which is off by default"
+  ],
+  "facet_availability": {
+    "manifest": {
+      "available": true
+    },
+    "dependencies": {
+      "available": false,
+      "reason": "no package.json at the target root"
+    },
+    "dev_dependencies": {
+      "available": false,
+      "reason": "no package.json at the target root"
+    },
+    "scripts": {
+      "available": false,
+      "reason": "no package.json at the target root"
+    },
+    "entry_points": {
+      "available": false,
+      "reason": "no package.json at the target root"
+    },
+    "toolchain": {
+      "available": true
+    },
+    "configs": {
+      "available": true
+    },
+    "artifacts": {
+      "available": true
+    },
+    "inventory": {
+      "available": true
+    },
+    "git": {
+      "available": false,
+      "reason": ".git is not present at the target root"
+    }
+  },
+  "unknowns": [],
+  "contradicts": [],
+  "tool": {
+    "name": "verax",
+    "version": "1.0.0"
+  }
+}

@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ChromeBot Ai</title>
+<link rel="stylesheet" href="panel.css">
+</head>
+<body data-phase="idle" data-compact="0">
+
+<header class="top">
+  <div class="brand">
+    <span id="orb" class="orb"><span class="ring" data-state="idle"></span></span>
+    <span class="brand-name">ChromeBot</span>
+    <span class="ver" id="verBadge">4.3.0</span>
+  </div>
+  <div class="top-actions">
+    <button id="compactBtn" class="icon" title="Hide the context bar and suggestions" aria-label="Toggle focus mode">⤢</button>
+    <button id="histBtn" class="icon" title="Tasks &amp; schedules" aria-label="Tasks and schedules">◷</button>
+    <button id="gearBtn" class="icon" title="Settings" aria-label="Settings">⚙</button>
+  </div>
+</header>
+
+<div class="context">
+  <span id="site" class="site" title="">—</span>
+  <span id="modelPill" class="pill" title="">—</span>
+  <span id="guardPill" class="pill" data-level="standard">Guard</span>
+</div>
+
+<!-- Live run: a sticky instrument panel, not a transcript row -->
+<section id="liveCard" hidden>
+  <div class="live-head">
+    <span class="live-dot"></span>
+    <b id="liveTask">…</b>
+    <span id="liveCount" class="live-count"></span>
+    <span id="liveTime" class="t">0:00</span>
+    <button id="liveStop" class="btn danger sm">Stop</button>
+  </div>
+  <button id="liveToggle" class="live-toggle" type="button" aria-expanded="true">
+    <span class="chev">▾</span><span id="liveToggleText">Hide steps</span>
+  </button>
+  <ol id="steps" class="steps"></ol>
+</section>
+
+<main id="feed" aria-live="polite"></main>
+<button id="compactBack" class="compact-back" title="Show the context bar and suggestions" aria-label="Exit focus mode">⤡</button>
+
+<footer>
+  <!-- Interruptions are docked above the composer: scrolled out of view = deadlock -->
+  <div id="dock" class="dock" hidden></div>
+  <div id="chips" class="chips"></div>
+  <div id="hint" role="status"></div>
+  <div class="composer">
+    <button id="mic" class="icon round" title="Dictate" aria-label="Dictate">●</button>
+    <textarea id="task" rows="1" placeholder="Ask, or describe a task…" spellcheck="false"></textarea>
+    <button id="run" class="send" title="Run" aria-label="Run">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4.5v11M5.5 10 10 15.5 14.5 10" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+  </div>
+</footer>
+
+<!-- Settings sheet -->
+<section id="settings" class="sheet-host" hidden>
+  <div class="sheet">
+    <div class="bar">
+      <div class="stabs">
+        <button class="stab on" data-tab="agent">Agent</button>
+        <button class="stab" data-tab="memory">Memory</button>
+        <button class="stab" data-tab="sites">Sites</button>
+        <button class="stab" data-tab="about">About</button>
+      </div>
+      <div class="bar-actions">
+        <button id="settingsBack" class="btn sm primary" type="button">← Back</button>
+        <button id="sheetClose" class="icon" type="button" title="Close" aria-label="Close">×</button>
+      </div>
+    </div>
+
+    <div class="spane" data-pane="agent">
+      <div class="pane-head"><span>Model provider</span></div>
+
+      <label>Provider
+        <select id="provider">
+          <option value="gemini">Google Gemini</option>
+          <option value="nvidia">NVIDIA NIM</option>
+          <option value="cline">Cline — Sign in with Google / GitHub</option>
+          <option value="clinepass">ClinePass</option>
+          <option value="openai">OpenAI</option>
+          <option value="groq">Groq</option>
+          <option value="openrouter">OpenRouter</option>
+          <option value="compatible">Custom OpenAI-compatible</option>
+        </select>
+      </label>
+
+      <!-- Cline OAuth-style login -->
+      <div id="clineRow" class="cline-card" hidden>
+        <div class="cline-title">
+          <span class="cline-logo">C</span>
+          <div>
+            <b>Continue with Cline</b>
+            <p class="sub">One sign-in for usage-billing models · free options included</p>
+          </div>
+        </div>
+        <button id="clineGoogle" class="btn auth google" type="button">
+          <span class="g-icon">G</span> Continue with Google
+        </button>
+        <button id="clineGithub" class="btn auth github" type="button">
+          <span class="g-icon">⌘</span> Continue with GitHub
+        </button>
+        <button id="clineEmail" class="btn auth email" type="button">
+          <span class="g-icon">@</span> Continue with Email
+        </button>
+        <p class="sub">After authorizing in the Cline tab: <b>Settings → API Keys → Create</b> → paste the key below.</p>
+        <div class="pair">
+          <button id="clineDash" class="btn sm">Dashboard</button>
+          <button id="clinePass" class="btn sm">Get ClinePass</button>
+          <button id="clinePaste" class="btn sm">I have a key</button>
+        </div>
+      </div>
+
+      <!-- OpenAI-compatible connection block -->
+      <div class="field-block">
+        <div class="pane-head"><span>Connection</span></div>
+        <label id="baseRow" hidden>API base URL
+          <input id="base" placeholder="https://api.example.com/v1" spellcheck="false" autocomplete="off">
+          <p class="sub">Required for custom OpenAI-compatible endpoints. Must include /v1 when the provider expects it.</p>
+        </label>
+        <label>API key
+          <div class="pair">
+            <input id="key" type="password" autocomplete="off" spellcheck="false" placeholder="API key">
+            <button id="testKey" class="btn" type="button">Test</button>
+          </div>
+          <p id="keyStatus" class="sub"></p>
+        </label>
+      </div>
+
+      <div class="field-block">
+        <div class="pane-head"><span>AI model</span></div>
+        <label>Model
+          <div class="pair">
+            <input id="model" list="models" placeholder="model id" spellcheck="false" autocomplete="off">
+            <button id="load" class="btn" type="button">Fetch models</button>
+          </div>
+          <datalist id="models"></datalist>
+          <p id="modelStatus" class="sub">Click Fetch to load models from the provider.</p>
+        </label>
+        <label>Model quality
+          <select id="quality">
+            <option value="auto">Auto — provider default</option>
+            <option value="low">Low — fast, short answers</option>
+            <option value="medium">Medium</option>
+            <option value="high">High — deeper reasoning</option>
+            <option value="xhigh">X-High — long thinking</option>
+            <option value="max">Max — strongest effort</option>
+          </select>
+          <p class="sub">Maps to reasoning_effort / max_tokens on NVIDIA NIM, Cline, and reasoning models. Thinking is metered out of this budget — too low and the model reasons without ever answering.</p>
+        </label>
+      </div>
+
+      <details id="headersWrap">
+        <summary>Custom headers (optional)</summary>
+        <div class="hdr-list" id="hdrList"></div>
+        <div class="pair">
+          <input id="hdrKey" placeholder="Header name (e.g. X-Org-Id)" spellcheck="false">
+          <input id="hdrVal" placeholder="Value" spellcheck="false">
+          <button id="hdrAdd" class="btn sm" type="button">Add</button>
+        </div>
+        <p class="sub">Sent with every model request. Authorization is filled from the API key unless you override it here.</p>
+      </details>
+
+      <div class="field-block">
+        <div class="pane-head"><span>Safety &amp; agent</span></div>
+        <label>Guard level
+          <select id="guard">
+            <option value="off">Off — fastest, sensitive fields only</option>
+            <option value="fast">Fast — ask only on hard-to-undo steps</option>
+            <option value="standard">Standard — ask on consequential steps</option>
+            <option value="strict">Strict — ask more, Jev checks every risk</option>
+            <option value="manual">Manual — ask before every page action</option>
+          </select>
+        </label>
+        <label class="row-check">
+          <input type="checkbox" id="crewOn" checked>
+          <span>Agent crew — Planner · Actor · Critic</span>
+        </label>
+        <label class="row-check">
+          <input type="checkbox" id="thinkOn" checked>
+          <span>Show model reasoning when streamed</span>
+        </label>
+      </div>
+
+      <details id="jevWrap">
+        <summary>Second opinion (Jev, optional)</summary>
+        <label>API key
+          <div class="pair">
+            <input id="jevKey" type="password" autocomplete="off" spellcheck="false">
+            <button id="testJev" class="btn sm" type="button">Test</button>
+          </div>
+          <p id="jevStatus" class="sub"></p>
+        </label>
+      </details>
+
+      <div class="field-block">
+        <div class="pane-head"><span>Interface</span></div>
+        <label>Dictation language
+          <input id="lang" placeholder="en-US">
+        </label>
+        <label>Theme
+          <select id="themeSel">
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+          </select>
+        </label>
+      </div>
+
+      <details id="previewWrap"><summary>Model payload preview</summary><pre id="preview">Run Inspect to build it.</pre></details>
+      <div class="pair end">
+        <button id="inspect" class="btn">Inspect page</button>
+        <button id="save" class="btn primary">Save</button>
+      </div>
+    </div>
+
+    <div class="spane" data-pane="memory" hidden>
+      <div class="pane-head">
+        <span>What ChromeBot remembers (local only)</span>
+      </div>
+      <div id="memList" class="list"></div>
+      <div class="pair">
+        <input id="addFact" placeholder="Add a fact, e.g. I prefer aisle seats">
+        <button id="addFactBtn" class="btn">Add</button>
+      </div>
+    </div>
+
+    <div class="spane" data-pane="sites" hidden>
+      <div class="pane-head"><span>Site permissions</span></div>
+      <div id="sitesList" class="list"></div>
+    </div>
+
+    <div class="spane" data-pane="about" hidden>
+      <div class="about">
+        <div class="hero" id="aboutHero"></div>
+        <b>ChromeBot Ai <span id="aboutVer">4.3.0</span></b>
+        <p class="sub" id="aboutBuild">Build 4.3.0</p>
+        <p class="sub">A super-agent crew for Chrome: Planner · Actor · Critic. It reads pages, plans with your model, and acts — with a live plan, permission cards, skills, local memory, multi-tab power, scheduled tasks and data export.</p>
+        <p class="sub">Providers: Gemini · NVIDIA NIM · <b>Cline login</b> (usage-billing) · <b>ClinePass</b> · OpenAI · Groq · OpenRouter · custom OpenAI-compatible. Keys stay in this browser.</p>
+        <p class="sub">Consequential steps pause for your approval. Sensitive fields are never filled. Page content is untrusted data — treat answers accordingly.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Tasks drawer: history + schedules (not a dashboard — just your runs) -->
+<section id="drawer" class="sheet-host" hidden>
+  <div class="sheet" role="dialog" aria-label="Tasks">
+    <div class="bar">
+      <div class="stabs">
+        <button class="stab on" data-tab="history">History</button>
+        <button class="stab" data-tab="schedules">Scheduled</button>
+      </div>
+      <div class="bar-actions">
+        <button id="drawerBack" class="btn sm primary" type="button">← Back to chat</button>
+        <button class="icon close-drawer" type="button" title="Close" aria-label="Close">×</button>
+      </div>
+    </div>
+    <div class="spane" data-pane="history">
+      <p class="sub">Runs you started from the chat. Click <b>Re-run</b> to do it again.</p>
+      <div id="histList" class="list"></div>
+    </div>
+    <div class="spane" data-pane="schedules" hidden>
+      <p class="sub">Recurring jobs. They notify you and queue a run when due.</p>
+      <div id="schedList" class="list"></div>
+      <div class="sched-form">
+        <input id="schedTask" placeholder="Task, e.g. check the price of X on Y">
+        <div class="pair">
+          <select id="schedEvery">
+            <option value="">Daily at…</option>
+            <option value="15">every 15 min</option>
+            <option value="60">every hour</option>
+            <option value="360">every 6 h</option>
+          </select>
+          <input id="schedDaily" placeholder="09:00" style="max-width:90px">
+          <button id="addSchedBtn" class="btn primary">Add</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div id="toast" class="toast"></div>
+
+<script src="core.js"></script>
+<script src="crew.js"></script>
+<script src="ui.js"></script>
+<script src="panel.js"></script>
+</body>
+</html>

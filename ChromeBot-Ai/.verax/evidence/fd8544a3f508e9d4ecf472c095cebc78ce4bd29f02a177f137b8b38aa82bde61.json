@@ -1,0 +1,34 @@
+{
+  "schema": "verax/evidence/v1",
+  "evidence_id": "fd8544a3f508e9d4ecf472c095cebc78ce4bd29f02a177f137b8b38aa82bde61",
+  "operation": "verify_claim",
+  "target": {
+    "kind": "claim-target",
+    "locator": "D:\\000000 Lab\\project extension\\ChromeBot-Ai"
+  },
+  "observed_at": "2026-10-14T09:15:54.230Z",
+  "result": {
+    "status": "refuted",
+    "observed": {
+      "errno": "ENOENT",
+      "parent_enumerable": true
+    }
+  },
+  "coverage": {
+    "scope": "root",
+    "status": "complete",
+    "omitted": []
+  },
+  "limitations": [],
+  "facet_availability": {
+    "artifact": {
+      "available": true
+    }
+  },
+  "unknowns": [],
+  "contradicts": [],
+  "tool": {
+    "name": "verax",
+    "version": "1.0.0"
+  }
+}

@@ -44,3 +44,10 @@ Record Chrome version, OS, endpoint, model, API format, date and observed result
 
 16. Page tools → Fetch URL as text: paste an https URL (or leave blank to use the selected tab's URL), approve the site grant, verify plain text lands in the preview and attaches as an untrusted reference; verify http:// non-loopback and non-text content types are rejected with clear errors; verify scripts/remote images never run (DOMParser text only).
 17. Agent mode tab browsing: with 2+ tabs open, start the agent; verify the confirmation dialog resolves read-tab refs to real tab titles/URLs; approve a switch and confirm the loop continues on the new tab (its origin grant is requested); deny a switch and verify the step fails safely; verify refs from a pre-switch snapshot cannot act on the post-switch page (token guard).
+
+## v2.3 agentic actuator (added 2026-10-25; not executed in this environment)
+
+18. Agent tools: hover opens a real menu (pointer events + settle); press works only with Tab/Escape/arrow keys and refuses Enter; wait pauses 100–800 ms; extract returns a bounded outline (headings/items/links/tables); page-level scroll top/bottom/±px works without a ref. Every tool still passes the per-step approval dialog.
+19. Snapshot richness: dropdowns list their options, text fields show a short current value, links show target hrefs, and controls inside shadow DOM (custom elements) are discovered up to depth 3.
+20. Click robustness: a click covered by an overlay fails with "Covered by …" instead of clicking through; a target whose label changed since the snapshot is refused; pages get a mutation-quiet settle before re-snapshot.
+21. Page tools → Attach digest of all tabs: one permission prompt lists every open site; the digest reads each granted tab's text into a single bounded reference (title + URL + ≤1800 chars each, 24,000 total).

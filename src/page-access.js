@@ -49,13 +49,39 @@ export async function openPageTools(onReference){
  const dialog=node('dialog'),title=node('h2','Page access & writing'),notice=node('p','Choose the webpage, grant its site access, then read/scan. Writing replaces one selected text field only after your confirmation. Website input handlers may autosave or send text.'),tabsSelect=node('select'),refresh=node('button','Refresh tabs'),grant=node('button','Grant access to this site'),scan=node('button','Read page & scan fields'),revoke=node('button','Revoke this site'),close=node('button','Close'),msg=node('p'),preview=node('textarea'),attach=node('button','Attach page to chat'),fields=node('select'),replacement=node('textarea'),apply=node('button','Review & write field');
  title.id='pageTitleTools';dialog.setAttribute('aria-labelledby','pageTitleTools');
  tabsSelect.setAttribute('aria-label','Target webpage');fields.setAttribute('aria-label','Target editable field');preview.setAttribute('aria-label','Page text preview');replacement.setAttribute('aria-label','Replacement text');preview.rows=9;replacement.rows=5;replacement.maxLength=50000;replacement.placeholder='Paste an answer or type the exact replacement here. This replaces the complete selected field.';for(const e of [tabsSelect,preview,fields,replacement]){e.style.width='100%';e.style.marginTop='12px';}attach.disabled=true;apply.disabled=true;let tabs=[],snapshot,documentId,fetched;
- const urlInput=node('input'),fetchBtn=node('button','Fetch URL as text');
+ const urlInput=node('input'),fetchBtn=node('button','Fetch URL as text'),digestBtn=node('button','Attach digest of all tabs');
  urlInput.type='url';urlInput.placeholder='…or paste any https:// URL to fetch as plain text (no scripts run)';urlInput.setAttribute('aria-label','URL to fetch');urlInput.style.width='100%';urlInput.style.marginTop='12px';
  function reset(){snapshot=null;documentId=null;fetched=null;fields.replaceChildren();preview.value='';attach.disabled=true;apply.disabled=true;}
  function selected(){const t=tabs.find(x=>String(x.id)===tabsSelect.value);if(!t)throw Error('No target webpage. Open a normal HTTP/HTTPS page, then refresh.');return t;}
  const run=fn=>async()=>{try{await fn();}catch(e){msg.textContent=e.message;}};
  async function loadTabs(){reset();const active=await chrome.tabs.query({active:true,lastFocusedWindow:true});tabs=targetTabs(await chrome.tabs.query({}),location.href);tabsSelect.replaceChildren();for(const t of tabs){const o=node('option',(t.title||new URL(t.url).hostname)+' — '+new URL(t.url).origin);o.value=String(t.id);tabsSelect.append(o);}if(active[0]&&tabs.some(t=>t.id===active[0].id))tabsSelect.value=String(active[0].id);msg.textContent=tabs.length?'Confirm the selected target, then grant access.':'No supported webpages found.';}
  tabsSelect.onchange=()=>{reset();msg.textContent='Target changed. Grant access and scan this page.';};refresh.onclick=run(loadTabs);
+ digestBtn.onclick=run(async()=>{
+   const list=targetTabs(await chrome.tabs.query({}),location.href).slice(0,12);
+   if(!list.length)throw Error('No supported webpages found.');
+   const patterns=[...new Set(list.map(t=>pageOrigin(t.url)))];
+   const granted=await chrome.permissions.request({origins:patterns});
+   if(!granted)throw Error('Site access was not granted; nothing was read.');
+   msg.textContent='Reading '+list.length+' tab(s)…';
+   const parts=[];let used=0,read=0;
+   for(const t of list){
+     try{
+       const fresh=await chrome.tabs.get(t.id);
+       if(!fresh.url)continue;
+       const results=await chrome.scripting.executeScript({target:{tabId:t.id},func:digestScan});
+       const s=results[0]?.result;
+       if(!s?.text)continue;
+       const chunk=String(fresh.title||s.title||'').slice(0,80)+' — '+fresh.url+'\n'+s.text;
+       if(used+chunk.length>24000)break;
+       parts.push(chunk);used+=chunk.length;read++;
+     }catch{}
+   }
+   if(!parts.length)throw Error('No tab text could be read.');
+   reset();
+   fetched={title:'Open tabs digest ('+read+' tab'+(read===1?'':'s')+')',url:''};
+   preview.value=parts.join('\n\n---\n\n');attach.disabled=false;
+   msg.textContent='Read '+read+' tab(s), '+used+' characters total, in one reference. Review, then attach.';
+ });
  // This call occurs synchronously within the button gesture, not after tabs.query/fetch.
  grant.onclick=run(async()=>{const t=selected(),pattern=pageOrigin(t.url);const ok=await chrome.permissions.request({origins:[pattern]});msg.textContent=ok?'Access granted. Click Read page & scan fields.':'Permission denied. No page content was read.';});
  revoke.onclick=run(async()=>{const t=selected();await chrome.permissions.remove({origins:[pageOrigin(t.url)]});reset();msg.textContent='Persistent site grant removed. A temporary toolbar activeTab grant, if present, may last until navigation/tab close.';});
@@ -92,12 +118,17 @@ export async function openPageTools(onReference){
    msg.textContent='Fetched '+text.length+' characters from '+u.hostname+'. Review, then attach.';
  });
  apply.onclick=run(async()=>{if(!snapshot||!documentId)throw Error('Read/scan first.');const t=selected(),f=snapshot.fields.find(f=>f.id===fields.value);if(!f)throw Error('Select an editable field.');const text=replacement.value;if(!text&&!confirm('The replacement is empty. Clear this field?'))return;const host=new URL(snapshot.url).origin;if(!confirm('Replace the entire field “'+f.label+'” on '+host+' with the following text?\n\n'+text+'\n\nThis does not click Submit. The website may autosave on input.'))return;const result=await chrome.scripting.executeScript({target:{tabId:t.id,documentIds:[documentId]},func:writeField,args:[snapshot.token,f.id,text,snapshot.url]});if(result[0]?.result?.error)throw Error(result[0].result.error);if(!result[0]?.result?.ok)throw Error('Write could not be confirmed. Inspect the page before trying again.');apply.disabled=true;msg.textContent='Text inserted. No submit button was clicked. Read/scan again before another write.';});
- const row=node('div');row.className='row';row.append(refresh,grant,scan,revoke);const writeLabel=node('h3','Write into an editable field');const bottom=node('div');bottom.className='row';bottom.append(attach,apply,close);dialog.append(title,notice,tabsSelect,row,urlInput,fetchBtn,msg,preview,writeLabel,fields,replacement,bottom);document.body.append(dialog);dialog.addEventListener('close',()=>dialog.remove(),{once:true});close.onclick=()=>dialog.close();dialog.showModal();await loadTabs();
+ const row=node('div');row.className='row';row.append(refresh,grant,scan,revoke);const fetchRow=node('div');fetchRow.className='row';fetchRow.append(fetchBtn,digestBtn);const writeLabel=node('h3','Write into an editable field');const bottom=node('div');bottom.className='row';bottom.append(attach,apply,close);dialog.append(title,notice,tabsSelect,row,urlInput,fetchRow,msg,preview,writeLabel,fields,replacement,bottom);document.body.append(dialog);dialog.addEventListener('close',()=>dialog.remove(),{once:true});close.onclick=()=>dialog.close();dialog.showModal();await loadTabs();
 }
 export function snapshotPage(){
-  const sel=window.getSelection()?.toString()||'';
+  const sel='a[href],button,input,textarea,select,summary,[role="button"],[role="link"],[role="textbox"],[role="combobox"],[role="listbox"],[role="checkbox"],[role="radio"],[role="menuitem"],[role="tab"],[role="switch"],[contenteditable="true"],[contenteditable=""],[tabindex]:not([tabindex="-1"])';
+  const clip=(s,n=90)=>String(s??'').replace(/\s+/g,' ').trim().slice(0,n);
+  const visible=e=>!!(e.getClientRects().length);
+  const sens=e=>/password|passwd|credit|cc-|card|cvc|cvv|otp|one-time|secret|token|api.?key/i.test([e.autocomplete,e.name,e.id,e.getAttribute&&e.getAttribute('aria-label')].join(' '));
+  const labelOf=e=>clip(e.getAttribute('aria-label')||e.getAttribute('placeholder')||e.getAttribute('title')||(e.labels&&e.labels[0]?e.labels[0].textContent:'')||e.getAttribute('name')||e.id||e.textContent||e.tagName.toLowerCase(),90);
+  const selText=window.getSelection()?.toString()||'';
   let text='';
-  if(sel.trim()) text=sel.slice(0,12000);
+  if(selText.trim()) text=selText.slice(0,12000);
   else if(document.body){
     const walk=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
     let n;
@@ -110,56 +141,156 @@ export function snapshotPage(){
       if(v) text+=v+'\n';
     }
   }
+  const seen=new Set(),light=[],deep=[];
+  for(const e of document.querySelectorAll(sel)){seen.add(e);light.push(e);}
+  // Shadow DOM: custom elements are the realistic hosts; the sweep per root is bounded.
+  let hosts=[document];
+  for(let depth=0;depth<3&&hosts.length;depth++){
+    const next=[];
+    for(const host of hosts){
+      let swept=0;
+      for(const e of host.querySelectorAll('*')){
+        if(swept++>4000) break;
+        if(e.localName&&e.localName.includes('-')&&e.shadowRoot){
+          for(const c of e.shadowRoot.querySelectorAll(sel)){if(!seen.has(c)){seen.add(c);deep.push(c);}}
+          next.push(e.shadowRoot);
+        }
+      }
+    }
+    hosts=next;
+  }
   const token=crypto.randomUUID(),map=new Map(),fields=[],interactives=[];
-  const sens=/password|passwd|credit|cc-|card|cvc|cvv|otp|one-time|secret|token|api.?key/i;
-  for(const el of document.querySelectorAll('textarea,input,[contenteditable="true"],[contenteditable=""]')){
+  const candidates=light.concat(deep);
+  for(const el of candidates){
     if(fields.length>=100) break;
     if(el.closest('[hidden],[aria-hidden="true"]')||!el.getClientRects().length||el.disabled||el.readOnly) continue;
-    if(el.tagName==='INPUT'&&!['text','search','url','email','tel','number'].includes(el.type)) continue;
-    const hints=[el.autocomplete,el.name,el.id,el.getAttribute('aria-label')].join(' ');
-    if(sens.test(hints)) continue;
+    if(!(el.tagName==='TEXTAREA'||el.isContentEditable||(el.tagName==='INPUT'&&['text','search','url','email','tel','number'].includes(el.type))||el.tagName==='SELECT')) continue;
+    if(sens(el)) continue;
     const st=getComputedStyle(el);
     if(st.visibility==='hidden'||st.display==='none') continue;
     const id=String(fields.length),value=el.isContentEditable?el.textContent:el.value;
     map.set(id,{el,value,kind:'field'});
-    const label=(el.labels?.[0]?.textContent?.trim()||el.getAttribute('aria-label')||el.placeholder||el.name||el.id||el.tagName.toLowerCase());
-    fields.push({id,label:label.slice(0,160),kind:el.tagName.toLowerCase(),length:String(value||'').length});
+    const entry={id,label:labelOf(el).slice(0,160),kind:el.tagName.toLowerCase(),length:String(value||'').length};
+    if(entry.kind!=='select'&&typeof value==='string'&&value) entry.value=clip(value,40);
+    if(el.tagName==='SELECT') entry.options=[...el.options].slice(0,20).map(o=>({label:clip(o.text,40),value:String(o.value||'').slice(0,60)}));
+    fields.push(entry);
   }
-  const seen=new Set();
-  const cands=document.querySelectorAll('a[href],button,input,select,textarea,summary,[role="button"],[tabindex]');
-  for(const el of cands){
+  for(const el of candidates){
     if(interactives.length>=120) break;
-    if(seen.has(el)) continue;
-    seen.add(el);
     if(el.disabled) continue;
     if(el.closest('[hidden],[aria-hidden="true"]')) continue;
     if(!el.getClientRects().length) continue;
     const st=getComputedStyle(el);
     if(st.display==='none'||st.visibility==='hidden') continue;
     if(el.tagName==='INPUT'&&['hidden','password'].includes(el.type)) continue;
-    let name=(el.getAttribute('aria-label')||el.textContent||el.value||el.title||el.placeholder||el.name||el.id||el.tagName).trim().replace(/\s+/g,' ').slice(0,120);
+    if(el.tagName==='SELECT'||el.tagName==='TEXTAREA'||el.isContentEditable) continue;
+    let name=clip(el.getAttribute('aria-label')||el.textContent||el.value||el.title||el.placeholder||el.name||el.id||el.tagName,120);
     if(!name) continue;
-    const role=(el.getAttribute('role')||el.tagName.toLowerCase()+(el.type?'['+el.type+']':'')).slice(0,40);
+    const role=clip(el.getAttribute('role')||el.tagName.toLowerCase()+(el.type?'['+el.type+']':''),40);
     const ref='e'+interactives.length;
-    map.set(ref,{el,kind:'interactive'});
-    interactives.push({ref,role,name});
+    map.set(ref,{el,kind:'interactive',label:clip(el.getAttribute('aria-label')||el.textContent||el.value||el.title||'',60),tag:el.tagName});
+    const entry={ref,role,name};
+    if(el.tagName==='A') entry.href=clip(el.href,100);
+    interactives.push(entry);
   }
   globalThis.__orbitPageEdit={token,map,url:location.href};
   return {title:document.title,url:location.href,text:text.slice(0,12000),token,fields,interactives};
 }
-export function agentAct(token,action,expectedURL){
+export async function agentAct(token,action,expectedURL){
   const st=globalThis.__orbitPageEdit;
   if(!st||st.token!==token||st.url!==location.href||location.href!==expectedURL) return {ok:false,error:'Page changed. Take a fresh snapshot.'};
   if(!action||typeof action!=='object') return {ok:false,error:'Bad action.'};
-  const entry=action.tool==='snapshot'?null:st.map.get(String(action.ref||''));
-  if(action.tool!=='snapshot'&&!entry?.el?.isConnected) return {ok:false,tool:action.tool,ref:action.ref,error:'Element gone. Take a fresh snapshot.'};
-  const el=entry?.el;
-  const visible=e=>{ if(!e.getClientRects().length) return false; const s=getComputedStyle(e); return s.display!=='none'&&s.visibility!=='hidden'; };
+  const KEYS=['Tab','Escape','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'];
+  const clip=(s,n=90)=>String(s??'').replace(/\s+/g,' ').trim().slice(0,n);
+  const visible=e=>!!(e.getClientRects().length);
   const sens=e=>/password|passwd|credit|cc-|card|cvc|cvv|otp|one-time|secret|token|api.?key/i.test([e.autocomplete,e.name,e.id,e.getAttribute&&e.getAttribute('aria-label')].join(' '));
+  const frame=()=>new Promise(res=>{if(document.hidden)return res();let done=false;const go=()=>{if(!done){done=true;res();}};requestAnimationFrame(go);setTimeout(go,80);});
+  const settleQuiet=cap=>new Promise(res=>{
+    if(document.hidden)return void setTimeout(res,120);
+    let quiet,done=false;
+    const finish=()=>{if(done)return;done=true;mo.disconnect();clearTimeout(hard);clearTimeout(quiet);res();};
+    const mo=new MutationObserver(()=>{clearTimeout(quiet);quiet=setTimeout(finish,110);});
+    const hard=setTimeout(finish,cap);
+    mo.observe(document.documentElement,{subtree:true,childList:true,attributes:true,characterData:true});
+    quiet=setTimeout(finish,Math.min(160,cap));
+  });
+  const outline=()=>{
+    const out=[],seenH=new Set(),seenL=new Set();
+    for(const h of document.querySelectorAll('h1,h2,h3,h4')){if(out.length>200)break;const t=clip(h.textContent,90);if(t&&!seenH.has(t)){seenH.add(t);out.push('H '+t);}}
+    const tables=[...document.querySelectorAll('table')].filter(visible).slice(0,3);
+    for(const [i,table] of tables.entries()){
+      const head=[...table.querySelectorAll('thead th,tr:first-child th')].slice(0,8).map(th=>clip(th.textContent,30));
+      const rows=[...table.querySelectorAll('tbody tr')].slice(0,6).map(tr=>[...tr.querySelectorAll('td,th')].slice(0,8).map(td=>clip(td.textContent,34)));
+      if(rows.length)out.push('TABLE t'+(i+1)+(head.length?' ['+head.join('; ')+']':'')+'\n'+rows.map(r=>r.join(' ; ')).join('\n'));
+    }
+    let items=0;
+    for(const li of document.querySelectorAll('li')){if(items>=44)break;if(!visible(li)||li.querySelector('li'))continue;const t=clip(li.textContent,120);if(t.length>2&&!seenL.has(t)){seenL.add(t);out.push('I '+t);items++;}}
+    let links=0;
+    for(const a of document.querySelectorAll('a[href]')){if(links>=34)break;if(!visible(a))continue;const t=clip(a.textContent,70);if(t.length>1&&!seenL.has(t)){seenL.add(t);out.push('L '+t+' -> '+clip(a.href,90));links++;}}
+    return out.join('\n').slice(0,2600);
+  };
+  const noRefTools=['snapshot','extract','wait'];
+  const needsRef=!noRefTools.includes(action.tool)&&(action.tool!=='scroll'||!!action.ref);
+  const entry=needsRef?st.map.get(String(action.ref||'')):null;
+  if(needsRef&&!entry?.el?.isConnected) return {ok:false,tool:action.tool,ref:action.ref,error:'Element gone. Take a fresh snapshot.'};
+  const el=entry?.el;
+  const staleCheck=()=>entry.tag!==undefined&&(entry.tag!==el.tagName||(entry.label&&clip(el.getAttribute('aria-label')||el.textContent||el.value||'',60)!==entry.label));
   try{
-    if(action.tool==='click'){ if(!visible(el)) return {ok:false,tool:'click',ref:action.ref,error:'Element not visible.'}; el.scrollIntoView({block:'center'}); el.focus({preventScroll:true}); el.click(); return {ok:true,tool:'click',ref:action.ref,detail:el.tagName}; }
-    if(action.tool==='focus'){ el.focus({preventScroll:false}); return {ok:true,tool:'focus',ref:action.ref}; }
-    if(action.tool==='scroll'){ el.scrollIntoView({block:'center'}); return {ok:true,tool:'scroll',ref:action.ref}; }
+    if(action.tool==='snapshot') return {ok:true,tool:'snapshot',detail:'re-read'};
+    if(action.tool==='extract'){const data=outline();return {ok:true,tool:'extract',detail:data||'Nothing extractable found'};}
+    if(action.tool==='wait'){const ms=Math.max(100,Math.min(800,Number(action.text)||300));await new Promise(r=>setTimeout(r,ms));return {ok:true,tool:'wait',detail:'waited '+ms+' ms'};}
+    if(action.tool==='scroll'&&!action.ref){
+      const v=String(action.text||'').trim();
+      if(v==='top')scrollTo({top:0,behavior:'instant'});
+      else if(v==='bottom')scrollTo({top:document.documentElement.scrollHeight,behavior:'instant'});
+      else{const n=Number(v);if(!Number.isFinite(n))return {ok:false,tool:'scroll',error:'Bad scroll amount.'};scrollBy({top:Math.max(-1200,Math.min(1200,n)),behavior:'instant'});}
+      await settleQuiet(600);
+      return {ok:true,tool:'scroll',detail:'scrolled '+v};
+    }
+    if(staleCheck()) return {ok:false,tool:action.tool,ref:action.ref,error:'Target changed since snapshot. Snapshot again.'};
+    if(action.tool==='click'||action.tool==='hover'){
+      if(!visible(el)) return {ok:false,tool:action.tool,ref:action.ref,error:'Element not visible.'};
+      el.scrollIntoView({block:'center',inline:'nearest'});
+      await frame();
+      const r=el.getBoundingClientRect(),x=Math.round(r.left+r.width/2),y=Math.round(r.top+r.height/2);
+      if(action.tool==='hover'){
+        for(const t of ['pointerover','mouseover','mouseenter','mousemove'])el.dispatchEvent(new PointerEvent(t,{bubbles:true,clientX:x,clientY:y}));
+        await settleQuiet(600);
+        return {ok:true,tool:'hover',ref:action.ref,detail:'hovered '+clip(el.getAttribute('aria-label')||el.textContent||'',40)};
+      }
+      await frame();
+      const attempt=()=>{
+        let hit=null,blocker=null;
+        for(const [px,py] of [[x,y],[r.left+2,r.top+2],[r.right-2,r.top+2],[r.left+2,r.bottom-2],[r.right-2,r.bottom-2]]){
+          const ix=Math.round(px),iy=Math.round(py);
+          if(ix<0||iy<0||ix>=innerWidth||iy>=innerHeight)continue;
+          const over=document.elementFromPoint(ix,iy);
+          if(over===el||el.contains(over)){hit=[ix,iy];break;}
+          if(!blocker&&over)blocker=over;
+        }
+        return {hit,blocker};
+      };
+      let aim=attempt();
+      if(!aim.hit&&aim.blocker){await settleQuiet(350);aim=attempt();}
+      if(!el.isConnected)return {ok:false,tool:'click',ref:action.ref,error:'Element gone.'};
+      if(!aim.hit){
+        if(aim.blocker){const b=clip(aim.blocker.tagName.toLowerCase()+(aim.blocker.id?'#'+aim.blocker.id:'')+' '+(aim.blocker.getAttribute('aria-label')||aim.blocker.textContent||''),70);return {ok:false,tool:'click',ref:action.ref,error:'Covered by '+b+' — that has to be closed first.'};}
+        return {ok:false,tool:'click',ref:action.ref,error:'Target is off screen.'};
+      }
+      el.focus({preventScroll:true});
+      el.click();
+      await settleQuiet(600);
+      return {ok:true,tool:'click',ref:action.ref,detail:el.tagName.toLowerCase()};
+    }
+    if(action.tool==='press'){
+      if(!KEYS.includes(action.text)) return {ok:false,tool:'press',ref:action.ref,error:'Key blocked. Only '+KEYS.join(', ')+'.'};
+      el.focus();
+      for(const t of ['keydown','keyup'])el.dispatchEvent(new KeyboardEvent(t,{key:action.text,bubbles:true}));
+      await settleQuiet(400);
+      return {ok:true,tool:'press',ref:action.ref,detail:action.text};
+    }
+    if(action.tool==='focus'){el.focus({preventScroll:false});return {ok:true,tool:'focus',ref:action.ref};}
+    if(action.tool==='scroll'){el.scrollIntoView({block:'center'});await settleQuiet(300);return {ok:true,tool:'scroll',ref:action.ref};}
     if(action.tool==='fill'||action.tool==='type'){
       if(entry.kind!=='field') return {ok:false,tool:action.tool,ref:action.ref,error:'Ref is not an editable field. Snapshot again.'};
       if(el.disabled||el.readOnly||!visible(el)) return {ok:false,tool:action.tool,ref:action.ref,error:'Field no longer editable.'};
@@ -170,12 +301,13 @@ export function agentAct(token,action,expectedURL){
       if(cur!==entry.value) return {ok:false,tool:action.tool,ref:action.ref,error:'Field changed since snapshot. Snapshot again.'};
       const next=action.tool==='fill'?action.text:(cur||'')+action.text;
       if(next.length>50000) return {ok:false,tool:action.tool,ref:action.ref,error:'Result too long.'};
-      el.focus(); el.scrollIntoView({block:'center'});
-      if(el.isContentEditable) el.textContent=next;
-      else{ const p=el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(p,'value').set.call(el,next); }
-      el.dispatchEvent(new Event('input',{bubbles:true,composed:true})); el.dispatchEvent(new Event('change',{bubbles:true}));
+      el.focus();el.scrollIntoView({block:'center'});
+      if(el.isContentEditable)el.textContent=next;
+      else{const p=el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(p,'value').set.call(el,next);}
+      el.dispatchEvent(new Event('input',{bubbles:true,composed:true}));el.dispatchEvent(new Event('change',{bubbles:true}));
       entry.value=next;
       const v=el.isContentEditable?el.textContent:el.value;
+      await settleQuiet(600);
       return v===next?{ok:true,tool:action.tool,ref:action.ref,detail:String(next.length)+' chars'}:{ok:false,tool:action.tool,ref:action.ref,error:'Site rejected the text.'};
     }
     if(action.tool==='select'){
@@ -184,15 +316,30 @@ export function agentAct(token,action,expectedURL){
       const want=String(action.text||'').trim().toLowerCase();
       if(!want) return {ok:false,tool:'select',ref:action.ref,error:'No option given.'};
       let idx=-1;
-      for(let i=0;i<el.options.length;i++){ const t=(el.options[i].text||'').trim().toLowerCase(),v=String(el.options[i].value||'').trim().toLowerCase(); if(t===want||v===want){idx=i;break;} }
-      if(idx<0) for(let i=0;i<el.options.length;i++){ const t=(el.options[i].text||'').trim().toLowerCase(); if(t.includes(want)){idx=i;break;} }
+      for(let i=0;i<el.options.length;i++){const t=(el.options[i].text||'').trim().toLowerCase(),v=String(el.options[i].value||'').trim().toLowerCase();if(t===want||v===want){idx=i;break;}}
+      if(idx<0)for(let i=0;i<el.options.length;i++){const t=(el.options[i].text||'').trim().toLowerCase();if(t.includes(want)){idx=i;break;}}
       if(idx<0) return {ok:false,tool:'select',ref:action.ref,error:'Option not found.'};
-      el.focus(); el.selectedIndex=idx;
-      el.dispatchEvent(new Event('input',{bubbles:true,composed:true})); el.dispatchEvent(new Event('change',{bubbles:true}));
+      el.focus();el.selectedIndex=idx;
+      el.dispatchEvent(new Event('input',{bubbles:true,composed:true}));el.dispatchEvent(new Event('change',{bubbles:true}));
+      await settleQuiet(600);
       return {ok:true,tool:'select',ref:action.ref,detail:el.options[idx].text.slice(0,120)};
     }
     return {ok:false,error:'Unknown tool.'};
   }catch(e){ return {ok:false,tool:action.tool,ref:action.ref,error:String(e&&e.message||e).slice(0,300)}; }
+}
+export function digestScan(){
+  let text='';
+  if(document.body){
+    const walk=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
+    let n;
+    while((n=walk.nextNode())&&text.length<2000){
+      const p=n.parentElement;
+      if(!p||p.closest('script,style,noscript,input,textarea,select,button'))continue;
+      const v=n.textContent.trim();
+      if(v)text+=v+' ';
+    }
+  }
+  return {title:document.title,url:location.href,text:text.replace(/\s+/g,' ').trim().slice(0,1800)};
 }
 
 export async function quickPageReference(depth='balanced'){

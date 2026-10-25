@@ -1,0 +1,45 @@
+{
+  "schema": "verax/evidence/v1",
+  "evidence_id": "869c837abb8ac831a760f67520f5d7dc94bccea0b2c2d7a6ec924475d8a2a913",
+  "operation": "verify_claim",
+  "target": {
+    "kind": "claim-target",
+    "locator": "D:\\000000 Lab\\project extension\\ChromeBot-Ai"
+  },
+  "observed_at": "2026-10-14T09:15:54.336Z",
+  "result": {
+    "status": "unknown",
+    "observed": {
+      "reason": "file does not exist: D:\\000000 Lab\\project extension\\ChromeBot-Ai\\package.json"
+    }
+  },
+  "coverage": {
+    "scope": "root",
+    "status": "partial",
+    "omitted": [
+      "file does not exist: D:\\000000 Lab\\project extension\\ChromeBot-Ai\\package.json"
+    ]
+  },
+  "limitations": [
+    "package.json could not be read, so the dependency set is unobserved"
+  ],
+  "facet_availability": {
+    "manifest": {
+      "available": false,
+      "reason": "file does not exist: D:\\000000 Lab\\project extension\\ChromeBot-Ai\\package.json"
+    }
+  },
+  "unknowns": [
+    {
+      "id": "claim-manifest-readability",
+      "question": "is react a dependency?",
+      "why_open": "file does not exist: D:\\000000 Lab\\project extension\\ChromeBot-Ai\\package.json",
+      "blocks": "any conclusion drawn from this claim"
+    }
+  ],
+  "contradicts": [],
+  "tool": {
+    "name": "verax",
+    "version": "1.0.0"
+  }
+}
