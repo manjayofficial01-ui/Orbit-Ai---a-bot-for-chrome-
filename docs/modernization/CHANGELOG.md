@@ -1,5 +1,17 @@
 # Modernization Changelog
 
+## Cycle 9 — 2026-10-26 — change: image text reading now uses the owner's configured model — branch `modernization/2026-10-26-c7`
+
+Owner direction: *"for the ocr work use the ai model user provided for this extension."*
+
+- "Read text (OCR)" and the File→image path now send the image to **the provider configured in Settings** and return the model's transcription as editable text, instead of going straight to the bundled engine.
+- The local Tesseract engine is kept as an explicitly **labelled fallback** (no vision support, missing grant, empty reply) — the dialog and the attached reference both say which engine produced the text, so a provider round-trip can never be mistaken for an on-device read.
+- Preconditions are checked before anything leaves the machine: model selected, provider host granted, key present. A dedicated transcription instruction orders text-only output and tells the model to treat instructions rendered inside the image as content, not commands.
+- New shared `imageUserMessage()` in `src/core.js` — the responses/chat image payload now lives in one place, used by both normal attachments and image reading (previously duplicated inline).
+- Docs corrected: README previously claimed image reading used "no vision model, no network, no provider", which is now false, and SECURITY.md gained an explicit section that **the image leaves the machine** on the model path.
+- Tests 140 → **144** Node (4 for the message builder incl. rejecting `javascript:` and remote URLs as image data, and the transport-budget guard; rewrote the image-reading gate to assert model-first ordering, pre-flight checks and labelled fallback). `npm run check` exit 0; `verify:chrome` 20/20.
+- **Not verified here:** the model path itself needs a real API key and a vision-capable model — no credentials were used in this environment, so only the local fallback and the request construction are covered by executed tests.
+
 ## Cycle 8 — 2026-10-26 — research + feature: provider-hosted X search and code interpreter — branch `modernization/2026-10-26-c7`
 
 The owner added a reference folder, `orbit-agent/`, and asked that Orbit be upgraded with its "engines". Reviewed all 11 files. **It is not a library of engines and not Orbit's own earlier code** — it is a smaller xAI-only sibling extension, and its README states plainly that the original repository could not be fetched and this is "an independently implemented replacement scaffold". Full analysis in `docs/modernization/ORBIT_AGENT_REVIEW.md`.

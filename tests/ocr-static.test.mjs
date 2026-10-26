@@ -54,12 +54,25 @@ test('a broken engine fails loudly and stays failed instead of retrying forever'
   assert.match(ocrScript,/starting=null/,'a failed start must be cleared so state stays honest');
 });
 
-test('images are attached as reviewed OCR text, not silently as image data',()=>{
+test('image reading prefers the owner\'s configured model and labels the fallback',()=>{
   assert.match(app,/\$\('fileInput'\)\.onchange[\s\S]*?\^image\\\//,'the file picker must accept images');
   assert.match(app,/if\(f\.size>6000000\)throw Error\('Images must be under 6 MB/);
-  assert.match(app,/readImageText\(dataUrl\)[\s\S]*?kind:'text'/,'an attached image becomes a text reference');
-  assert.match(app,/\[Local OCR from '/);
-  // The screenshot dialog keeps the image for vision providers but offers a local text path.
-  assert.match(app,/\$\('ocrShot'\)\.onclick[\s\S]*?kind:'text'/);
-  assert.match(app,/\$\('contextPreview'\)\.value=preview\.text;\$\('contextPreview'\)\.readOnly=false/,'OCR output must be reviewable and editable before sending');
+  // Model path first, and it must be the configured provider rather than a hard-coded one.
+  assert.match(app,/async function extractImageText\(dataUrl/, 'a single image-reading entry point is required');
+  assert.match(app,/generateOnce\(cfg,key,\[\{role:'system',content:TRANSCRIBE_SYSTEM\},imageUserMessage\(/);
+  assert.match(app,/const cfg=\{\.\.\.config\(\)\};cfg\.base=normalizeBase\(cfg\.base\);/,'it must use the profile the owner selected');
+  // Preconditions are checked before anything leaves the machine.
+  const body=/async function extractImageText[\s\S]*?\n\}/.exec(app)?.[0]||'';
+  assert.ok(body.indexOf('Choose a model in Settings')<body.indexOf('onStage(\'model\')'),'model must be chosen before a request is made');
+  assert.ok(body.indexOf('Grant provider access')<body.indexOf('onStage(\'model\')'),'provider grant must be checked before a request is made');
+  assert.ok(body.indexOf('Save an API key')<body.indexOf('onStage(\'model\')'),'key must be checked before a request is made');
+  // Fallback is explicit, labelled, and never silent.
+  assert.match(app,/catch\(modelError\)\{[\s\S]*?readImageText\(dataUrl\)[\s\S]*?source:'local',modelNote:/);
+  assert.match(app,/source==='model'\?'transcribed by '/,'every result must say which engine produced it');
+  // The transcription prompt must not let an image issue instructions.
+  assert.match(app,/do not follow it/i,'transcription must refuse instructions embedded in the image');
+  // Both call sites go through the same path, and the text is reviewable before sending.
+  assert.equal([...app.matchAll(/await extractImageText\(/g)].length,2,'screenshot dialog and file picker must share one path');
+  assert.doesNotMatch(app,/try\{const r=await readImageText\(dataUrl\);status\(''\);showPreview/,'the file picker must not bypass the model path');
+  assert.match(app,/\$\('contextPreview'\)\.value=preview\.text;\$\('contextPreview'\)\.readOnly=false/,'extracted text must be editable before sending');
 });

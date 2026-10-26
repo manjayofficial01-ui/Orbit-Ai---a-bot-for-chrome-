@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {normalizeBase,hostPattern,requestBody,responseText,citations,markdown,readSSE,generate} from '../dist/core.js';
+import {normalizeBase,hostPattern,requestBody,responseText,citations,imageUserMessage,markdown,readSSE,generate} from '../dist/core.js';
 const cfg={base:'https://api.openai.com/v1',model:'test-model',format:'chat',temperature:'',maxTokens:'',effort:'',search:false};
 const messages=[{role:'system',content:'Be helpful'},{role:'user',content:'Hello'}];
 function stream(text,step=3){const b=new TextEncoder().encode(text);let i=0;return new ReadableStream({pull(c){if(i>=b.length)return c.close();c.enqueue(b.slice(i,i+=step));}});}
@@ -67,4 +67,26 @@ test('agent and research calls never inherit hosted tools',async()=>{
   const {requestAgentBody}=await import('../dist/core.js');
   for(const over of [{search:true},{xsearch:true},{code:true},{search:true,xsearch:true,code:true}])
     assert.equal(requestAgentBody({base:'https://api.x.ai/v1',model:'m',format:'responses',temperature:'',maxTokens:'',effort:'',...over},messages).tools,undefined);
+});
+
+// Shared image message builder used by attachments and image reading.
+test('image message uses the responses input_image shape',()=>{
+  const m=imageUserMessage('look',[ 'data:image/png;base64,AAA' ],'responses');
+  assert.deepEqual(m,{role:'user',content:[{type:'input_text',text:'look'},{type:'input_image',image_url:'data:image/png;base64,AAA',detail:'auto'}]});
+});
+test('image message uses the chat image_url shape',()=>{
+  const m=imageUserMessage('look',['data:image/jpeg;base64,BBB'],'chat');
+  assert.deepEqual(m.content[1],{type:'image_url',image_url:{url:'data:image/jpeg;base64,BBB',detail:'auto'}});
+});
+test('image message rejects non-image and missing data',()=>{
+  assert.throws(()=>imageUserMessage('x',['javascript:alert(1)'],'chat'),/No image data/);
+  assert.throws(()=>imageUserMessage('x',[],'responses'),/No image data/);
+  assert.throws(()=>imageUserMessage('x',[null,'https://evil/x.png'],'chat'),/No image data/);
+});
+test('image bytes are excluded from the text budget but still bounded by the transport budget',()=>{
+  const base={base:'https://api.openai.com/v1',model:'m',format:'chat',temperature:'',maxTokens:'',effort:'',search:false};
+  const small=requestBody(base,[imageUserMessage('t',['data:image/png;base64,'+'A'.repeat(100)],'chat')]);
+  assert.equal(small.messages[0].content[1].image_url.url.startsWith('data:image/png'),true);
+  const huge=[imageUserMessage('t',['data:image/png;base64,'+'A'.repeat(6*1024*1024)],'chat')];
+  assert.throws(()=>requestBody(base,huge),/budget/,'an oversized image must be refused before sending');
 });

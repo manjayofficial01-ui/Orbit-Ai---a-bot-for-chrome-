@@ -60,6 +60,13 @@ export async function generateOnce(config,key,messages,{signal,timeoutMs=120000}
 }
 export function responseText(obj){return obj.output_text || (obj.output||[]).flatMap(x=>x.content||[]).map(x=>x.text||x.refusal||'').join('') || obj.choices?.[0]?.message?.content || '';}
 export function citations(obj){const result=[];for(const item of obj.output||[])for(const c of item.content||[])for(const a of c.annotations||[])if(a.type==='url_citation'&&a.url)result.push(a);return result;}
+// One place that decides how an image reaches each API shape, so chat, attachments and image reading cannot drift.
+export function imageUserMessage(text,dataUrls,format){
+ const urls=(dataUrls||[]).filter(u=>typeof u==='string'&&u.startsWith('data:image/'));
+ if(!urls.length)throw Error('No image data to send.');
+ if(format==='responses')return {role:'user',content:[{type:'input_text',text},...urls.map(image_url=>({type:'input_image',image_url,detail:'auto'}))]};
+ return {role:'user',content:[{type:'text',text},...urls.map(url=>({type:'image_url',image_url:{url,detail:'auto'}}))]};
+}
 export function markdown(chat){return '# '+chat.title+'\n\n'+chat.messages.map(m=>'## '+m.role+'\n\n'+m.content+(m.state&&m.state!=='complete'?'\n\n['+m.state+']':'')).join('\n\n');}
 export async function readSSE(stream,onEvent){
  const reader=stream.getReader(),decoder=new TextDecoder();let buffer='',data=[],event='',ended=false;

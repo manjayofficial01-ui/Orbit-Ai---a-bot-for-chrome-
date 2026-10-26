@@ -21,6 +21,12 @@ The nativeMessaging permission powers one fixed host name, ai.orbit.agent_reach,
 
 A provider host permission is not limited to the entered API path. Review the domain before approving. Localhost origin checks and server authentication remain the local server's responsibility.
 
+## Reading text out of images
+
+"Read text (OCR)" and attaching an image file use **the provider you configured**: the image is sent to that endpoint as an ordinary multimodal request and the model's transcription is returned as editable text. That means the image's contents — which may include passwords, account data or personal information visible on screen — leave your machine exactly as they would for any other attached image, and the request is billed by your provider. A dedicated transcription instruction tells the model to output only visible text and to treat any instructions embedded in the image as content rather than commands, but that is a prompt, not enforcement: a rendered page can still attempt injection through its pixels.
+
+If the model path is unavailable (no vision support, no host grant, empty reply), Orbit falls back to the bundled on-device engine and **labels which one produced the text**, so you are never told "local" about something that left the machine. The fallback itself makes no network call.
+
 ## Vendored OCR engine and the CSP exception
 
 Local image text extraction uses a vendored build of Tesseract.js (engine, worker, WebAssembly core and one English language model — about 6.8 MB) copied from `vendor/tesseract/` into `dist/vendor/` at build time. It adds **no permission** and **no network access**: every path is a `chrome-extension://` URL, the module contains no `fetch` call, and a test asserts both. `vendor/VENDOR.md` records the upstream source, version and sha256 of each file, and `tests/ocr-static.test.mjs` recomputes those hashes so a changed binary fails the suite rather than shipping quietly.
