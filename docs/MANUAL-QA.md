@@ -24,7 +24,7 @@ Record Chrome version, OS, endpoint, model, API format, date and observed result
 ## 2.1 UX, persistence, and smart context
 - Save a provider key, restart Chrome, reopen Orbit, and confirm the key status says saved without entering it again.
 - Change the API base to an endpoint with a previously saved key; confirm model discovery can run without retyping the key.
-- Use Connect & fetch models; verify discovered IDs populate the dropdown and choosing one updates the manual ID field.
+- Press Fetch models only: verify discovered IDs populate the dropdown, choosing one updates the manual ID field, and the status says it is a list, not a verdict. Press Test connection separately and confirm it reports the named model and elapsed time.
 - Ask “summarize this page” on a normal webpage; grant access and verify a fresh page-context chip appears before generation.
 - Ask a question unrelated to the page; verify Orbit does not capture page text.
 - Select Screenshot; confirm visible-tab capture is previewed and removable before sending. Test a text-only model and confirm failure is explicit rather than claiming no image was attached.
@@ -100,3 +100,12 @@ Automated coverage now exists: `npm run verify:chrome` drives the real extension
 47. OCR quality on your real content: small font, low contrast, dark mode and dense tables. Expect garbled runs on small text — report which cases are unusable before anyone treats OCR output as reliable.
 48. Unplug the network and repeat 45–46: OCR must still work, proving nothing is fetched.
 49. Composer toolbar at 400 px in the actual side panel: confirm Send is visible without horizontal scrolling, and judge whether the wrapped rows look acceptable or need shorter labels.
+
+## Cycle 10 — provider presets and separate fetch/test (2026-10-26)
+
+Automated coverage exists for this (`npm run verify:chrome`, 34/34): Fetch models hits only `/models`, Test connection hits only `/chat/completions` with the selected model and a bounded cap, a 404 on the list is worded as list-only, and the same model still tests working afterwards. Confirm the parts a script cannot:
+
+50. With a real OpenAI key: press **Test connection** and confirm it answers in well under a second and mentions one billed request. Then press **Fetch models** and confirm the two actions never change each other's message.
+51. With a key whose org cannot list models (or any endpoint that 404s `/models`): confirm the failure says the list endpoint is unavailable and that your model may still work, then confirm **Test connection** still reports the model working. This is the reported bug.
+52. Google Gemini: choose the provider, paste a `AIza...` key, press Fetch models, pick a `gemini-…` model, then Test connection. Confirm the request uses Chat Completions and the output cap field is `max_tokens` — if you switch Gemini to the Responses format, Google ignores it, so Test connection is the check that catches that.
+53. Set API format to Responses with a chat-only compatible provider and press Test connection: confirm the 404 advice tells you to switch the format rather than just failing.

@@ -21,6 +21,8 @@ The nativeMessaging permission powers one fixed host name, ai.orbit.agent_reach,
 
 A provider host permission is not limited to the entered API path. Review the domain before approving. Localhost origin checks and server authentication remain the local server's responsibility.
 
+Settings → **Test connection** sends one real, small generation request to whatever endpoint and model are configured (a fixed one-word prompt, output capped at 64 tokens unless you set a lower cap) and may bill accordingly; it is never sent automatically, and the background model-list refresh on endpoint change is a plain `GET /models` with no generation. **Fetch models** only reads the list. Neither action adds hosted provider tools to the request.
+
 ## Reading text out of images
 
 "Read text (OCR)" and attaching an image file use **the provider you configured**: the image is sent to that endpoint as an ordinary multimodal request and the model's transcription is returned as editable text. That means the image's contents — which may include passwords, account data or personal information visible on screen — leave your machine exactly as they would for any other attached image, and the request is billed by your provider. A dedicated transcription instruction tells the model to output only visible text and to treat any instructions embedded in the image as content rather than commands, but that is a prompt, not enforcement: a rendered page can still attempt injection through its pixels.

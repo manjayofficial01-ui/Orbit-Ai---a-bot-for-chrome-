@@ -22,7 +22,7 @@ Provider inference is still billed by your provider, and the same page content y
 3. Enable Developer mode.
 4. Click Load unpacked and select orbit-ai/dist, the folder containing manifest.json.
 5. Pin Orbit and click its toolbar icon on a normal webpage.
-6. Open Settings → Connection, choose a provider, enter your API key, and select Connect & fetch models.
+6. Open Settings → Connection, choose a provider and enter your API key. **Fetch models** lists what the endpoint advertises; **Test connection** sends one small live request to the model you selected and tells you whether it actually answers. They are separate because a provider can refuse the list while your model works fine — and a listed model is not proof it generates.
 7. Choose a discovered model (or type an exact compatible model ID), select the API format, then Save connection. The endpoint-bound key is reused on later browser restarts.
 8. Send your first message. The provider may charge for inference and hosted tools.
 
@@ -52,12 +52,13 @@ Do not delete the extracted folder while using the unpacked extension. This pack
 | OpenAI | https://api.openai.com/v1 | Chat Completions or Responses |
 | xAI | https://api.x.ai/v1 | Responses for hosted search |
 | OpenRouter | https://openrouter.ai/api/v1 | Chat Completions |
+| Google Gemini | https://generativelanguage.googleapis.com/v1beta/openai | Chat Completions (its compatibility layer ignores the Responses endpoint) |
 | Ollama | http://localhost:11434/v1 | Chat Completions |
 | Custom | Your trusted HTTPS base URL | Whichever it implements |
 
 Enter an API base, not the provider's chat website and not a URL ending in /chat/completions or /responses. Orbit appends the selected endpoint. Compatibility varies by service, model and account; a successful model list is not proof that generation or optional parameters work.
 
-Only standard Bearer authentication and unauthenticated loopback inference are supported. No Azure deployment mapping, query-string auth, arbitrary custom auth headers, native Anthropic API, tools/function execution or automatic vendor-specific schema translation is included.
+Only standard Bearer authentication and unauthenticated loopback inference are supported. No Azure deployment mapping, query-string auth, arbitrary custom auth headers, native Anthropic API, tools/function execution or automatic vendor-specific schema translation is included. Google Gemini is reached through its own OpenAI-compatible endpoint (`/v1beta/openai`) with a Bearer key, so it needs no special handling — note that layer documents only Chat Completions and ignores the Responses format, which is why the preset selects Chat Completions and uses the `max_tokens` field name.
 
 For Ollama, pull a text model and start the server. If origin checks reject the extension, configure the server to permit your specific chrome-extension://EXTENSION_ID origin, following the server's documentation. Avoid broadly allowing all origins. The ID is shown at chrome://extensions.
 

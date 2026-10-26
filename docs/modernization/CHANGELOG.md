@@ -1,5 +1,22 @@
 # Modernization Changelog
 
+## Cycle 10 — 2026-10-26 — fix + feature: separate model listing from model testing; Google Gemini preset — v2.9.0 — branch `modernization/2026-10-26-c7`
+
+Owner report: a working OpenAI model appeared "not working", and fetching models and testing them should be separate actions.
+
+**Diagnosis.** There is no "Not Working" string anywhere in the codebase, so the report was about behaviour, not a label. The real defect: the single **Test & fetch models** button only ever called `GET /models`. That is a *list* request, not a test of anything — so a provider that refuses or fails `/models` (permissions, quota, an endpoint that simply does not implement it) reported a perfectly usable model as broken, while a successful list implied a health it had never checked. Orbit had **no way at all to verify that a selected model answers.**
+
+- **Split into two actions.** **Fetch models** only lists (`Listing only proves the endpoint answers…`). **Test connection** is new: one small live generation request to the selected model, reporting the model name, elapsed time and a reply excerpt, and stating that a request was made and may be billed.
+- **Every list failure now says it is only the list** and points at Test connection, so a refused `/models` can no longer read as a dead model.
+- **The probe is deliberately inert:** hosted provider tools (web/X search, code interpreter) and optional parameters are stripped, temperature/effort cleared, output capped at 64 tokens, 60 s timeout, and an HTTP 200 with no text is reported as a failure rather than a pass.
+- **Failures are mapped to actions:** 401/403 → key or permission; 404 → wrong model ID, and if the format is Responses it tells you to switch to Chat Completions; 429 → quota, not breakage; network → endpoint reachability.
+- **Google Gemini added** via its documented OpenAI-compatible endpoint (`https://generativelanguage.googleapis.com/v1beta/openai`, Bearer auth). Verified against Google's docs first: that layer supports Chat Completions and `models.list()` but **ignores the Responses API**, and it ignores unrecognised fields — so the preset selects Chat Completions and uses `max_tokens`, otherwise a user's output cap would silently do nothing.
+- The convenience auto-fetch on endpoint change is now non-fatal, so a background list failure cannot masquerade as a hard error.
+
+**Verification.** 144 → **150** Node tests (new `tests/provider-settings.test.mjs`, 6 gates) + 12 Python, `check` exit 0. `verify:chrome` extended to **34/34** and now drives the real buttons with **trusted mouse events** (Chrome refuses `permissions.request` without a genuine gesture) against a local stand-in provider, proving behaviourally: Fetch models hits only `/models`; Test connection hits only `/chat/completions` with the selected model and a 64-token cap and no `tools`; a 404 on the list is worded as list-only; **the same model still tests working after that refused list** — the reported bug, reproduced and fixed; and the Gemini preset loads the right base, format and token field.
+
+Two harness bugs found on the way, both worth remembering: a fresh page target resets device metrics, and the settings dialog is taller than the default 800×600 window, so the action buttons sat at y=587 in a 484-high viewport and every "click" silently missed. `clickEl` now throws if a target is off-screen instead of reporting a false pass.
+
 ## Cycle 9 — 2026-10-26 — change: image text reading now uses the owner's configured model — branch `modernization/2026-10-26-c7`
 
 Owner direction: *"for the ocr work use the ai model user provided for this extension."*
