@@ -83,7 +83,14 @@ $('settingsForm').onsubmit=safe(async event=>{event.preventDefault();const c=rea
 $('revoke').onclick=safe(async()=>{const c=readConfig();await chrome.permissions.remove({origins:[hostPattern(c.base)]});delete keys[c.base];delete modelCache[c.base];await writeLocal({orbitKeys:keys,orbitModels:modelCache});$('key').value='';$('key').placeholder='Enter once and save';fillModels([],c.model);$('settingsStatus').textContent=storageWritable?'Saved key, model cache, and provider host access removed.':'Key and model cache cleared for this session only — local storage is unavailable, so the saved key will return after a restart.';});
 $('clear').onclick=safe(async()=>{if(!confirm('Delete all Orbit chats, settings, memory notes and saved keys, and revoke optional provider hosts?'))return;const permissions=await chrome.permissions.getAll();if(permissions.origins?.length)await chrome.permissions.remove({origins:permissions.origins});await chrome.storage.local.clear();await chrome.storage.session.clear();location.reload();});
 for(const b of document.querySelectorAll('[data-font]'))b.onclick=safe(async()=>{state.fontSize=b.dataset.font;applyAppearance();await save();});for(const b of document.querySelectorAll('[data-theme-choice]'))b.onclick=safe(async()=>{state.theme=b.dataset.themeChoice;applyAppearance();await save();});
-function showPreview(ref){if(pending.length>=3)throw Error('Attach at most three references.');preview=ref;const shot=ref.kind==='screenshot';$('contextTitle').textContent=shot?'Screenshot reference':'Page context';$('analyzeShot').hidden=!shot;$('ocrShot').hidden=!shot;$('attach').classList.toggle('primary',!shot);$('contextPreview').value=shot?`Screenshot of ${ref.title}\n${ref.url||''}\n\nThe screenshot will be sent as image data only if your compatible provider accepts image data URLs.`:(ref.url?ref.url+'\n\n':'')+ref.text;$('contextPreview').readOnly=shot;$('contextDialog').showModal();}
+function showPreview(ref){if(pending.length>=3)throw Error('Attach at most three references.');preview=ref;const shot=ref.kind==='screenshot';const img=$('shotPreview');
+$('contextTitle').textContent=shot?'Screenshot reference':'Page context';$('analyzeShot').hidden=!shot;$('ocrShot').hidden=!shot;$('attach').classList.toggle('primary',!shot);
+if(shot&&ref.dataUrl){img.hidden=false;img.src=ref.dataUrl;img.alt='The captured screenshot of '+(ref.title||'the page')+'. This is the image that will be sent.';}
+else{img.hidden=true;img.removeAttribute('src');}
+$('contextNote').textContent=shot?'This is the image Orbit actually captured. Nothing is sent until you submit your message.':'Webpage text is untrusted and is sent only when you submit your message.';
+$('contextPreview').rows=shot?5:14;
+$('contextPreview').value=shot?`Screenshot of ${ref.title}\n${ref.url||''}\n\n${ref.dataUrl.length.toLocaleString()} characters of image data captured. Sent as image data to providers that accept it, or read into editable text with the OCR button below.`:(ref.url?ref.url+'\n\n':'')+ref.text;
+$('contextPreview').readOnly=shot;$('contextDialog').showModal();}
 let reachReviewResolve;
 function settleReachReview(approved){
   const resolve=reachReviewResolve;reachReviewResolve=null;
@@ -192,20 +199,24 @@ $('page').onclick=safe(()=>openPageTools(showPreview));$('screenshot').onclick=s
    return;
  }
  if(f.size>100000)throw Error('Text files must be under 100 KB.');if(!/\.(txt|md|csv|json|log|js|ts|py|html|css|xml|yaml|yml|sql|sh)$/i.test(f.name))throw Error('Only images and supported plain-text formats are accepted.');showPreview({title:f.name,url:'',text:(await f.text()).slice(0,24000),kind:'text'});});
-$('attach').onclick=()=>{pending.push(preview.kind==='screenshot'?preview:{...preview,text:$('contextPreview').value.slice(0,24000)});preview=null;$('contextDialog').close();renderAttachments();};$('analyzeShot').onclick=safe(async()=>{if(busy)return;if(!preview||preview.kind!=='screenshot')return;const ref=preview;preview=null;$('contextDialog').close();pending.push(ref);renderAttachments();if(!$('prompt').value.trim())$('prompt').value='Analyze this screenshot. Describe what the page shows, its purpose and main content, and point out anything unusual or worth acting on.';await send();});$('ocrShot').onclick=safe(async()=>{
-  if(!preview||preview.kind!=='screenshot')throw Error('No screenshot to read.');
-  const button=$('ocrShot');button.disabled=true;$('attach').disabled=true;
+$('attach').onclick=()=>{pending.push(preview.kind==='screenshot'?preview:{...preview,text:$('contextPreview').value.slice(0,24000)});preview=null;$('contextDialog').close();renderAttachments();};$('analyzeShot').onclick=safe(async()=>{if(busy)return;if(!preview||preview.kind!=='screenshot')return;const ref=preview;preview=null;$('contextDialog').close();pending.push(ref);renderAttachments();if(!$('prompt').value.trim())$('prompt').value='Analyze this screenshot. Describe what the page shows, its purpose and main content, and point out anything unusual or worth acting on.';await send();});$('ocrShot').onclick=async()=>{
+  const button=$('ocrShot'),note=$('contextNote');
+  if(!preview||preview.kind!=='screenshot'){note.textContent='No screenshot is open to read.';return;}
+  button.disabled=true;$('attach').disabled=true;$('analyzeShot').disabled=true;
+  note.textContent='Reading text from the image on this device… the first run also loads the OCR engine.';
   try{
-    status('Reading text from the screenshot on this device…');
     const r=await readImageText(preview.dataUrl);
     preview={title:preview.title,url:preview.url,text:'[Local OCR'+(r.truncated?' · truncated':'')+']\n\n'+r.text,kind:'text'};
     $('contextTitle').textContent='Text read from the screenshot';
-    $('contextPreview').value=preview.text;$('contextPreview').readOnly=false;
-    $('analyzeShot').hidden=true;button.hidden=true;
-    $('attach').classList.add('primary');
-    status('Text extracted locally. Edit anything it misread, then attach.');
-  }finally{button.disabled=false;$('attach').disabled=false;}
-});
+    $('contextPreview').value=preview.text;$('contextPreview').readOnly=false;$('contextPreview').rows=10;
+    $('analyzeShot').hidden=true;button.hidden=true;$('attach').classList.add('primary');
+    note.textContent=`Read ${r.text.length.toLocaleString()} characters at ${r.confidence}% confidence. This text is what will be attached — edit anything it misread. The image above stays visible for comparison.`;
+    status('Text extracted locally. Review it, then attach.');
+  }catch(e){
+    note.textContent='Could not read text from this image: '+e.message+' The screenshot itself is untouched — Attach reference still sends the image.';
+    status('OCR failed: '+e.message);
+  }finally{button.disabled=false;$('attach').disabled=false;$('analyzeShot').disabled=false;}
+};
 $('cancelContext').onclick=$('cancelContextTop').onclick=()=>$('contextDialog').close();
 $('send').onclick=safe(()=>send());$('stop').onclick=()=>controller?.abort();$('regenerate').onclick=safe(()=>send(true));$('new').onclick=safe(newChat);$('filter').oninput=renderHistory;$('back').onclick=safe(()=>moveHistory(-1));$('forward').onclick=safe(()=>moveHistory(1));
 $('delete').onclick=safe(()=>deleteChat(state.current));

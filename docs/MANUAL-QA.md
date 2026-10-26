@@ -96,7 +96,7 @@ Automated coverage now exists: `npm run verify:chrome` drives the real extension
 
 44. Load `dist/` unpacked (v2.7.0) and confirm Chrome accepts the new CSP (`script-src 'self' 'wasm-unsafe-eval'`) with no manifest errors on the extensions page.
 45. File → choose a PNG screenshot of a text-heavy page. Confirm the status line reports local reading, the preview shows labelled OCR text with a confidence value, the text is editable, and attaching sends text (not image data).
-46. Screenshot → "Read text from image (OCR)". Confirm the dialog retitles to "Text read from the screenshot", the image is replaced by reviewable text, and "Analyze now" still works when you decline to OCR.
+46. Screenshot → "Read text (OCR)". Confirm the dialog retitles to "Text read from the screenshot", the image is replaced by reviewable text, and "Analyze now" still works when you decline to OCR.
 47. OCR quality on your real content: small font, low contrast, dark mode and dense tables. Expect garbled runs on small text — report which cases are unusable before anyone treats OCR output as reliable.
 48. Unplug the network and repeat 45–46: OCR must still work, proving nothing is fetched.
 49. Composer toolbar at 400 px in the actual side panel: confirm Send is visible without horizontal scrolling, and judge whether the wrapped rows look acceptable or need shorter labels.

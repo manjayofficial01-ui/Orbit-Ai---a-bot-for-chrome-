@@ -34,7 +34,7 @@ This is the concrete argument for the harness: six cycles of careful source audi
 - `vendor/tesseract/` — engine 5.1.1, worker, `tesseract-core-simd-lstm.wasm.js`, `4.0.0_best_int` English model; **7,081,949 bytes**, sha256-pinned in `vendor/VENDOR.md` with a license table.
 - `src/ocr.js` — lazy single-use engine (`getWorker` caches; a failed start latches and reports instead of retrying), canvas 2× upscale onto white (measured to matter for small text), bounds checked **before** the engine starts (8 MB encoded, 24 MP, 24k-char output, 90 s timeout, abort signal honoured at each stage).
 - File button now accepts `image/*`; an image is OCR'd locally and attached as an **editable text reference** labelled with its confidence, per the owner's "OCR text replaces the image" decision.
-- Screenshot dialog gains **Read text from image (OCR)**, which converts the pending reference to reviewable text; "Analyze now" (vision) is untouched, so both routes remain.
+- Screenshot dialog gains **Read text (OCR)**, which converts the pending reference to reviewable text; "Analyze now" (vision) is untouched, so both routes remain.
 - CSP: `script-src 'self' 'wasm-unsafe-eval'`. No new permission, no new host, no runtime fetch.
 
 Measured on this machine: **1.22 s cold start**, **~1.9 s** to read a full screenshot, engine confidence **91–92**, correct extraction of a random marker and amounts, and **garbled output on a smaller styled line** in the first probe — which is why the result lands in an editable preview rather than going straight to the provider, and why README/SECURITY say accuracy is not guaranteed. English only; only the SIMD core is shipped, so non-SIMD CPUs get an explicit "OCR unavailable" rather than a silent fallback.

@@ -165,6 +165,39 @@ if(cap?.ok){
   record('local OCR reads the captured screenshot', ocr?.ok===true&&ocr.hasHeading===true, JSON.stringify(ocr).slice(0,220));
   record('OCR finds the random marker text', ocr?.hasMarker===true, `marker=${CANARY} found=${ocr?.hasMarker} confidence=${ocr?.confidence}`);
   record('OCR does not invent hidden (display:none) text', ocr?.hasHidden===false, `hasHidden=${ocr?.hasHidden}`);
+
+  // The dialog itself: click the real Screenshot button and confirm the captured image is shown
+  // and that every action is inside the dialog box (a scrolled-out action is a real failure).
+  const dialogCheck=`
+    document.getElementById('screenshot').click();
+    await new Promise(r=>setTimeout(r,2500));
+    const d=document.getElementById('contextDialog'), img=document.getElementById('shotPreview');
+    const box=d.getBoundingClientRect(), names=['cancelContext','ocrShot','analyzeShot','attach'];
+    const outside=names.filter(id=>{const el=document.getElementById(id); if(el.hidden) return false;
+      const r=el.getBoundingClientRect(); return r.right>box.right+1||r.bottom>box.bottom+1||r.width===0;});
+    const out={viewport:document.documentElement.clientWidth+'x'+document.documentElement.clientHeight,
+      open:d.open, imgShown:!img.hidden, w:img.naturalWidth, h:img.naturalHeight,
+      hasSrc:(img.currentSrc||img.src||'').startsWith('data:image/'), alt:!!img.alt,
+      dialogBottom:Math.round(box.bottom), visible:names.filter(id=>!document.getElementById(id).hidden), outside,
+      scrollOverflow:d.scrollHeight-d.clientHeight};
+    document.getElementById('cancelContext').click();
+    return out;`;
+  await send('Emulation.setDeviceMetricsOverride',{width:1280,height:900,deviceScaleFactor:1,mobile:false},fx);
+  await sleep(400);
+  const dlg=await evaluate(fx,dialogCheck);
+  record('screenshot dialog shows the actual captured image', dlg?.imgShown===true&&dlg?.w>100&&dlg?.hasSrc===true&&dlg?.alt===true, JSON.stringify(dlg).slice(0,200));
+  record('dialog actions stay inside the dialog at 1280x900', dlg?.outside?.length===0&&dlg?.scrollOverflow===0, `outside=[${dlg?.outside}] innerScroll=${dlg?.scrollOverflow}`);
+
+  // The real usage shape: a narrow side panel.
+  await send('Emulation.setDeviceMetricsOverride',{width:420,height:820,deviceScaleFactor:1,mobile:false},fx);
+  await sleep(400);
+  const narrow=await evaluate(fx,dialogCheck);
+  record('screenshot dialog still shows the image in a narrow panel', narrow?.imgShown===true&&narrow?.w>100, JSON.stringify(narrow).slice(0,180));
+  record('no dialog action falls outside the dialog at 420x820', narrow?.outside?.length===0&&narrow?.dialogBottom<=821&&narrow?.scrollOverflow===0, JSON.stringify(narrow).slice(0,220));
+  // Keep the dialog open and photograph it, so the visual claim can be inspected rather than inferred.
+  await evaluate(fx,`document.getElementById('screenshot').click(); await new Promise(r=>setTimeout(r,2500)); return 1;`);
+  const dlgPng=await send('Page.captureScreenshot',{format:'png'},fx);
+  if(dlgPng.result?.data){const f=join(OUT,'orbit-screenshot-dialog.png');writeFileSync(f,Buffer.from(dlgPng.result.data,'base64'));shots.push(f);}
 }
 
 server.close(); ws.close(); child.kill('SIGTERM'); await sleep(600);
