@@ -1,5 +1,19 @@
 # Verified test results
 
+## Cycle 7 — 2026-10-26 — v2.7.0 (local OCR + real-Chrome harness)
+
+- Build: `npm run build` — copies 11 modules, `src/manifest.json`, the native-host installer **and `vendor/tesseract/`** into `dist/`; asserts the language model landed. Passed.
+- `npm run check`: exit 0 (now includes `node --check dist/ocr.js`).
+- Node suite: **132 passed / 0 failed** (adds `tests/ocr-static.test.mjs`: vendor sha256 pins, no-network invariant, exact CSP relaxation, input bounds checked before startup, latched engine failure, images attached as reviewed text).
+- Python bridge: **12 passed / 0 failed**.
+- **`npm run verify:chrome`: 15/15 checks passed** on Chrome/156.0.8078.47 — the real unpacked extension installed via CDP `Extensions.loadUnpacked`, boot with no page errors, no horizontal overflow and every composer control visible at 400/720/1280 px, honest capture refusal on the shipped manifest, a real capture (`image/jpeg`, 762×484), and **local OCR of that capture** (random marker found, engine confidence 91–92, hidden `display:none` text not invented).
+- Fail-first evidence: the vendor hash gate was shown to **fail** when a recorded hash was edited and pass again after restore; the harness itself was corrected after it initially reported `chrome.runtime.id: null` (wrong target) and used `typeof import` (a syntax error).
+- Sizes: `dist/` 347,332 B → **7,434,635 B** (vendored engine 7,081,949 B). Permissions unchanged; secret scan clean.
+- OCR performance observed: ~1.2 s cold engine start, ~1.9 s per screenshot read. Accuracy caveat: a smaller styled line garbled in the first probe — see MANUAL-QA 47.
+- Still unverified here: the live side-panel surface, real permission prompts, and human click-through of the OCR button (MANUAL-QA 44–49). Screenshots are now produced by the harness, so "no visual evidence" is no longer true; what remains unproven is Chrome's consent UX, which headless cannot exercise.
+
+---
+
 Last verified: 2026-10-26 (modernization cycle 6 — v2.6.1 capture permission fix, branch `modernization/2026-10-26-c6`).
 
 - Build: `npm run build` copies 10 extension modules, `src/manifest.json` and the native-host installer into `dist/` — passed. `index.html` and `styles.css` still live only in `dist/` and are edited there (see README).

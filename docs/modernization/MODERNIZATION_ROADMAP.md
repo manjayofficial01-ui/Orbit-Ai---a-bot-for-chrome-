@@ -1,4 +1,4 @@
-# Modernization Roadmap — after cycle 6 (2026-10-26)
+# Modernization Roadmap — after cycle 7 (2026-10-26)
 
 Legend: done ✓ | next | later | rejected (reason)
 
@@ -6,6 +6,8 @@ Legend: done ✓ | next | later | rejected (reason)
 - (none open)
 
 ## P1 — High impact
+- ✓ FEAT-004 (cycle 7, v2.7.0) **local OCR** — attach any image or OCR a screenshot on-device with a vendored Tesseract engine; text lands in the editable preview labelled with confidence, replacing the image per the owner's decision. Proven in real Chrome (marker extracted at 91–92 confidence). Costs: +6.8 MB and `'wasm-unsafe-eval'` in the CSP, both pinned by tests and documented in `vendor/VENDOR.md`.
+- ✓ UI-001 (cycle 7) composer toolbar clipped **Send** at side-panel widths (600 px overflow at 400 px, scrollbar hidden ≤720 px) — fixed by wrapping; now asserted at 400/720/1280 by `verify:chrome`.
 - ✓ FIX-001 (cycle 6, v2.6.1) capture permission flow: Chrome's captureVisibleTab ignores per-origin grants (the owner hit the "Either '&lt;all_urls&gt;' or 'activeTab' permission is required" error live); `<all_urls>` added as optional-only, requested once contextually when a capture is refused, with a single retry and an honest decline message. Both capture paths (buttons + agent tool) share the helper. 4 fail-first tests; MANUAL-QA 43.
 - ✓ FEAT-003 (cycle 5, v2.6.0) browser-use-grade navigation core: `goto` (http(s)-only, credential-free, destination URL in the approval dialog, site grant settled before navigating, ~8 s readable-wait), `nav-history` (back/forward), and Enter added to `press` with an explicit "can submit the focused form" approval warning — closing the documented "Enter is never synthesised" ceiling at the owner's request while keeping per-step approval and no auto-submit. Every navigation ends its step (goto/nav-history join read-tab in the anti-stale-ref rule). System prompt reframed as an observe/navigate/act/verify operator loop. 6 fail-first tests + 2 gates; MANUAL-QA 39–42 for live Chrome.
 - ✓ FEAT-002 (cycle 4, v2.5.0) automatic active-tab context: the keyword heuristic ("this page" matched, "this post" didn't → model nagged "use Add page") is gone; every message now auto-attaches a fresh snapshot of the active tab (default on, off in Settings → Context, skipped when something else is attached or the active tab is Orbit's own workspace). No-context fallback rewritten to explain the grant-and-resend fix and route interaction requests to Agent mode. Verified by a fail-first hardening gate; live flow in MANUAL-QA 36–38.
@@ -32,9 +34,10 @@ Legend: done ✓ | next | later | rejected (reason)
 | REL-007 `runAgent` has no outer wall-clock cap | chat uses 300 s, research 600 s; agent is bounded only by 8 × 120 s | next (one-line consistency) |
 | REL-009 `tabRefs` is snapshotted once per agent run | found by the independent reviewer: `agent-run.js` builds the Open-tabs list at start and never refreshes it, so tabs opened mid-run stay unreachable and switched-to tabs keep reporting their earlier title/URL to the model | next (small) |
 | SEC-005 `permissions.request()` after an `await` | reviewer re-raised it: Chrome's sticky activation is expected to cover it, but the digest path requests many origins after `tabs.query`, and no source here can prove it. Currently only disclosed (MANUAL-QA 27) | next — verify in Chrome, then either assert it or restructure the gesture |
-| In-browser verification of the extension itself | cycle 2 proved a stubbed-`chrome` boot harness works for DOM logic, but permission prompts, real automation and the review dialogs still need a loaded unpacked extension | next — needs a Chrome-with-extension automation path or a manual pass |
+| In-browser verification of the extension itself | cycle 2 proved a stubbed-`chrome` boot harness works for DOM logic, but permission prompts, real automation and the review dialogs still need a loaded unpacked extension | **done ✓ (cycle 7)** — `npm run verify:chrome` installs the real extension over CDP `Extensions.loadUnpacked` and asserts 15 checks incl. a real capture and local OCR. Consent UX still needs a human (MANUAL-QA 44–49) |
 
 ## P3 — Optional
+- OCR follow-ups (cycle 7): a second language (+~3 MB each), OCR as an Agent-mode tool, and shortening toolbar labels below 720 px now that the toolbar wraps to ~4 rows at 400 px.
 - `renderText` odd-fence edge case; per-message incremental rendering if caps ever grow.
 - Standalone web-app UI (Page Assist pattern) alongside the panel.
 - Localized shortcut hints beyond Ctrl/⌘; other key labels.

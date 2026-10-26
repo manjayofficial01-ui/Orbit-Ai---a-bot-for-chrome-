@@ -89,3 +89,14 @@ Record Chrome version, OS, endpoint, model, API format, date and observed result
 ## Modernization cycle 6 — v2.6.1 capture permission fix (added 2026-10-26; NOT executed in this environment)
 
 43. One-time all-sites capture prompt: with no blanket grant (fresh profile or after revoking site permissions for Orbit), click Screenshot (or Analyze now) on any page. The capture is first attempted with the per-origin grant; when Chrome refuses it, Orbit must show exactly one "all sites" permission prompt, then retry the capture — the screenshot must arrive without further clicks. Every later capture, on any site (including the agent's screenshot tool), must work with no prompt. Declining the prompt must produce the "Screenshots need one-time all-sites access…" message and no retry loop. Revoking all-sites access from chrome://extensions → Orbit → Site settings must bring the prompt back on the next capture. Also verify the agent screenshot path after revocation: the contextual prompt may not be showable mid-run (gesture rules), so the run must degrade to the honest message advising the toolbar-icon click — never a silent failure.
+
+## Cycle 7 — local OCR and real-Chrome verification (2026-10-26)
+
+Automated coverage now exists: `npm run verify:chrome` drives the real extension in headless Chrome and passes 15/15 checks (boot, layout and control visibility at 400/720/1280 px, honest capture refusal, a real capture, and OCR of that capture). The items below are the parts only a human can confirm.
+
+44. Load `dist/` unpacked (v2.7.0) and confirm Chrome accepts the new CSP (`script-src 'self' 'wasm-unsafe-eval'`) with no manifest errors on the extensions page.
+45. File → choose a PNG screenshot of a text-heavy page. Confirm the status line reports local reading, the preview shows labelled OCR text with a confidence value, the text is editable, and attaching sends text (not image data).
+46. Screenshot → "Read text from image (OCR)". Confirm the dialog retitles to "Text read from the screenshot", the image is replaced by reviewable text, and "Analyze now" still works when you decline to OCR.
+47. OCR quality on your real content: small font, low contrast, dark mode and dense tables. Expect garbled runs on small text — report which cases are unusable before anyone treats OCR output as reliable.
+48. Unplug the network and repeat 45–46: OCR must still work, proving nothing is fetched.
+49. Composer toolbar at 400 px in the actual side panel: confirm Send is visible without horizontal scrolling, and judge whether the wrapped rows look acceptable or need shorter labels.

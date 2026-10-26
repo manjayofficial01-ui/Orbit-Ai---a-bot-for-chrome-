@@ -21,6 +21,14 @@ The nativeMessaging permission powers one fixed host name, ai.orbit.agent_reach,
 
 A provider host permission is not limited to the entered API path. Review the domain before approving. Localhost origin checks and server authentication remain the local server's responsibility.
 
+## Vendored OCR engine and the CSP exception
+
+Local image text extraction uses a vendored build of Tesseract.js (engine, worker, WebAssembly core and one English language model — about 6.8 MB) copied from `vendor/tesseract/` into `dist/vendor/` at build time. It adds **no permission** and **no network access**: every path is a `chrome-extension://` URL, the module contains no `fetch` call, and a test asserts both. `vendor/VENDOR.md` records the upstream source, version and sha256 of each file, and `tests/ocr-static.test.mjs` recomputes those hashes so a changed binary fails the suite rather than shipping quietly.
+
+The one thing it does cost is CSP: running WebAssembly requires `'wasm-unsafe-eval'` in `script-src`, so the policy is now `script-src 'self' 'wasm-unsafe-eval'`. That permits executing self-hosted WebAssembly — it does not allow remote scripts, remote wasm, `unsafe-inline` or `unsafe-eval` of JS, and a test pins the rest of the policy so the relaxation cannot creep further. Practical consequence: anyone who can write into your unpacked extension folder can already run code as that extension; the wasm allowance does not add a new attacker, but it does mean the `vendor/` files must be reviewed as carefully as source. Only the SIMD core is shipped, so on a CPU without SIMD OCR reports that it is unavailable — it never falls back to sending your image somewhere else.
+
+OCR output is untrusted content like any other reference: it is labelled as machine-read text, shown in the editable preview, and only reaches your provider if you send it. Accuracy is not guaranteed — measured on a real capture it read large body text at ~90% engine confidence but garbled smaller lines, so review what it extracts.
+
 ## Key handling
 Keys are bound to normalized full base URLs and persisted in chrome.storage.local. They are not written to chat history or exports. Editing the endpoint shows the saved key for that endpoint if one exists. Fetch omits cookies/referrers and rejects redirects. HTTP errors display only status/generic advice rather than an arbitrary provider body that might echo secrets. Requests are not automatically retried.
 

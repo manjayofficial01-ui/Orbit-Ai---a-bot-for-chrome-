@@ -57,7 +57,7 @@
           <button id="page">Add page</button>
           <button id="screenshot">Screenshot</button>
           <button id="file">File</button>
-          <input type="file" id="fileInput" hidden accept=".txt,.md,.csv,.json,.log,.js,.ts,.py,.html,.css,.xml,.yaml,.yml,.sql,.sh">
+          <input type="file" id="fileInput" hidden accept="image/*,.txt,.md,.csv,.json,.log,.js,.ts,.py,.html,.css,.xml,.yaml,.yml,.sql,.sh">
           <select id="style" aria-label="Assistant style"><option>Balanced</option><option>Analyst</option><option>Code</option><option>Creative</option></select>
           <button id="composerToggle" title="Expand or shrink the composer">Expand</button>
           <span class="spacer"></span><button id="stop" hidden>Stop</button><button id="send" class="primary">Send <span aria-hidden="true">↑</span></button>
@@ -119,6 +119,6 @@
   <p id="reachReviewError" role="alert"></p>
   <div class="dialog-actions"><button type="button" id="reachStop" class="danger">Stop research</button><span class="spacer"></span><button type="button" id="reachDecline">Decline</button><button type="button" id="reachApprove" class="primary">Approve this call</button></div>
 </dialog>
-<dialog id="contextDialog" aria-labelledby="contextTitle"><div class="dialog-head"><div><span class="eyebrow">Review before sharing</span><h2 id="contextTitle">Page context</h2></div><button id="cancelContextTop" class="icon" aria-label="Close">×</button></div><p>Webpage text is untrusted and is sent only when you submit your message.</p><textarea id="contextPreview" rows="14" aria-label="Reference preview"></textarea><div class="row end"><button id="cancelContext">Cancel</button><button id="analyzeShot" class="primary" hidden>Analyze now</button><button id="attach">Attach reference</button></div></dialog>
+<dialog id="contextDialog" aria-labelledby="contextTitle"><div class="dialog-head"><div><span class="eyebrow">Review before sharing</span><h2 id="contextTitle">Page context</h2></div><button id="cancelContextTop" class="icon" aria-label="Close">×</button></div><p>Webpage text is untrusted and is sent only when you submit your message.</p><textarea id="contextPreview" rows="14" aria-label="Reference preview"></textarea><div class="row end"><button id="cancelContext">Cancel</button><button type="button" id="ocrShot" hidden>Read text from image (OCR)</button><button id="analyzeShot" class="primary" hidden>Analyze now</button><button id="attach">Attach reference</button></div></dialog>
 <script type="module" src="app.js"></script>
 </body></html>

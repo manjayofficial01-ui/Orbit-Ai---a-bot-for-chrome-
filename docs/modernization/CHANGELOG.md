@@ -1,5 +1,23 @@
 # Modernization Changelog
 
+## Cycle 7 — 2026-10-26 — feature + fix: local OCR and real-Chrome verification — v2.7.0 — branch `modernization/2026-10-26-c7`
+
+### User-visible
+- **Local OCR.** Attach any PNG/JPEG/WebP/GIF/BMP image, or press "Read text from image (OCR)" on a screenshot, and Orbit extracts the text **on-device** with a bundled Tesseract engine — no vision model, no network, no provider. The result lands in the existing editable preview, labelled with its confidence, so a misread can be fixed before it is ever sent. Per the owner's decision the OCR text replaces the image rather than being sent alongside it; "Analyze now" (vision) is unchanged.
+- **Send is reachable again at side-panel widths.** The composer toolbar overflowed by 600 px at 400 px wide and clipped Screenshot, File, the style select, Expand and **Send** — with the scrollbar hidden below 720 px, so the primary action looked absent in the default side panel. The toolbar now wraps.
+
+### Internal
+- New `npm run verify:chrome`: installs the real unpacked extension into headless Chrome over CDP (`Extensions.loadUnpacked` — Chrome ignores `--load-extension` now) and asserts boot, layout and control visibility at 400/720/1280 px, honest capture refusal without a grant, a real capture, and OCR of that capture. 15/15 checks pass. Zero dependencies, throwaway profile, never touches the owner's browser.
+- `src/ocr.js` (lazy engine, latched failure state, bounds checked before startup), `vendor/tesseract/*` with sha256 pins in `vendor/VENDOR.md`, build step copies the engine, 6 new gates in `tests/ocr-static.test.mjs` including a tamper-demonstrated hash check.
+- Tests 126 → **132 Node**, Python unchanged at 12. `dist/` 347,332 B → **7,434,635 B**.
+
+### Breaking / costs
+- CSP is now `script-src 'self' 'wasm-unsafe-eval'` — the one relaxation WebAssembly requires, pinned by a test so it cannot creep further. No new permission and no new host access.
+- ~6.8 MB of vendored binaries is now part of the product; English only; SIMD core only (older CPUs get an explicit "OCR unavailable").
+
+### Rollback
+- Two local commits on `modernization/2026-10-26-c7`; nothing pushed. `git revert` them, or `git checkout main` (v2.6.1) to discard the branch.
+
 ## Cycle 6 — 2026-10-26 — fix: capture permission flow — v2.6.1 — branch `modernization/2026-10-26-c6`
 
 Trigger: the owner hit "Either the '<all_urls>' or 'activeTab' permission is required" on a live capture. Root cause: Chrome's `captureVisibleTab` **ignores per-origin grants** — it accepts only a fresh activeTab gesture (toolbar-icon click on that tab) or all-sites host access, so the per-site grant the capture path relied on was never sufficient. The owner chose (asked directly) the one-time contextual all-sites option.

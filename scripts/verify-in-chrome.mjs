@@ -51,9 +51,9 @@ const PROFILE=join(OUT,'profile'); mkdirSync(PROFILE,{recursive:true});
 const CANARY='ZEBRA-'+Math.floor(Math.random()*1e4);
 const server=createServer((_q,res)=>{res.writeHead(200,{'content-type':'text/html'});
   res.end(`<!doctype html><meta charset=utf-8><title>Orbit verify canary</title>
-  <body style="font:30px system-ui;margin:36px;background:#fdf6e3">
-  <h1 style="color:#b58900">Orbit verification target</h1><p>Marker: <b>${CANARY}</b></p>
-  <p style="background:#2aa198;color:#fff;padding:16px">Teal band with white text</p>
+  <body style="font:42px Georgia,serif;margin:40px;background:#fff;color:#000">
+  <h1>Orbit verification target</h1><p>Marker: <b>${CANARY}</b></p>
+  <p>Total due: 1,284.50</p>
   <p style="display:none">HIDDEN-MUST-NOT-APPEAR</p>`);});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const webPort=server.address().port;
@@ -154,6 +154,17 @@ if(cap?.ok){
   writeFileSync(jpg,Buffer.from(String(dataUrl).split(',')[1],'base64')); shots.push(jpg);
   const dims=await evaluate(fx,`const i=new Image(); i.src=window.__shot; await i.decode(); return {w:i.naturalWidth,h:i.naturalHeight};`);
   record('captured image decodes with real dimensions', dims?.w>100&&dims?.h>100, JSON.stringify(dims));
+
+  // The feature under test: Orbit's own local OCR reading Orbit's own screenshot, no network involved.
+  const ocr=await evaluate(fx,`const o=await import('./ocr.js');
+    try{ const r=await o.readImageText(window.__shot); const flat=r.text.replace(/\\s+/g,' '); return {ok:true,confidence:r.confidence,state:o.ocrState(),
+      hasHeading:/Orbit verification target/i.test(flat), hasMarker:flat.includes(${JSON.stringify(CANARY)}),
+      hasAmount:/1[,.]?284[.,]?50/.test(flat), hasHidden:flat.includes('HIDDEN-MUST-NOT-APPEAR'),
+      sample:flat.slice(0,160)}; }
+    catch(e){ return {ok:false,error:String(e.message).slice(0,180)}; }`);
+  record('local OCR reads the captured screenshot', ocr?.ok===true&&ocr.hasHeading===true, JSON.stringify(ocr).slice(0,220));
+  record('OCR finds the random marker text', ocr?.hasMarker===true, `marker=${CANARY} found=${ocr?.hasMarker} confidence=${ocr?.confidence}`);
+  record('OCR does not invent hidden (display:none) text', ocr?.hasHidden===false, `hasHidden=${ocr?.hasHidden}`);
 }
 
 server.close(); ws.close(); child.kill('SIGTERM'); await sleep(600);
