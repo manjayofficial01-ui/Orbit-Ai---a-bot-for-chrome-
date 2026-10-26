@@ -19,6 +19,7 @@ import {mkdirSync, existsSync, readFileSync, writeFileSync, cpSync, rmSync} from
 import {createServer} from 'node:http';
 import {tmpdir} from 'node:os';
 import {join, dirname} from 'node:path';
+import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 
 const root=join(dirname(fileURLToPath(import.meta.url)),'..');
@@ -49,10 +50,11 @@ const PROFILE=join(OUT,'profile'); mkdirSync(PROFILE,{recursive:true});
 
 // A local canary page: identifiable by eye in a screenshot, and with hidden text that must not appear.
 const CANARY='ZEBRA-'+Math.floor(Math.random()*1e4);
+let pageVariant='ALPHA';
 const server=createServer((_q,res)=>{res.writeHead(200,{'content-type':'text/html'});
   res.end(`<!doctype html><meta charset=utf-8><title>Orbit verify canary</title>
-  <body style="font:42px Georgia,serif;margin:40px;background:#fff;color:#000">
-  <h1>Orbit verification target</h1><p>Marker: <b>${CANARY}</b></p>
+  <body style="font:34px Georgia,serif;margin:18px;background:#fff;color:#000">
+  <h1 style="font-size:38px;margin:0 0 10px;color:${pageVariant==='ALPHA'?'#b00':'#080'}">Orbit verification target · ${pageVariant}</h1><p>Marker: <b>${CANARY}</b></p>
   <p>Total due: 1,284.50</p>
   <p style="display:none">HIDDEN-MUST-NOT-APPEAR</p>`);});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
@@ -337,6 +339,43 @@ if(cap?.ok){
       waitedMs:Date.now()-t0};`);
   record('an empty model reply falls back to the local engine and labels it', /bundled engine/.test(fallback?.note||'')&&/\[Image text · local OCR/.test(fallback?.preview||''),
     JSON.stringify({note:(fallback?.note||'').slice(0,110),preview:(fallback?.preview||'').slice(0,60),waitedMs:fallback?.waitedMs}));
+  // ---- the reported bug: a new screenshot must REPLACE the previous one, not pile up behind it ----
+  const canaryUrl=`http://127.0.0.1:${webPort}/`;
+  await evaluate(fx,`const s=await chrome.storage.local.get('orbit'); await chrome.storage.local.set({orbit:{...s.orbit,chats:[],current:''}}); return 1;`);
+  await send('Target.closeTarget',{targetId:fixUi2}); await sleep(700);
+  const replayTarget=(await send('Target.createTarget',{url:`chrome-extension://${fixId}/index.html`})).result.targetId;
+  const rf=await attach(replayTarget);
+  await send('Target.activateTarget',{targetId:web}); await sleep(1400);
+  const shotAndSend=async prompt=>{
+    await evaluate(rf,`for(let i=0;i<120;i++){ if(!document.getElementById('screenshot').disabled) break; await new Promise(r=>setTimeout(r,250)); } return 1;`);
+    await evaluate(rf,`document.getElementById('screenshot').click(); return 1;`);
+    await sleep(2800);
+    const pills=await evaluate(rf,`const d=document.getElementById('contextDialog'); if(!d.open) return 'no-dialog';
+      const src=(document.getElementById('shotPreview').currentSrc||document.getElementById('shotPreview').src||'').length;
+      document.getElementById('attach').click();
+      return document.querySelectorAll('#attachments button').length+'/'+src;`);
+    await evaluate(rf,`document.getElementById('prompt').value=${JSON.stringify(prompt)}; document.getElementById('send').click(); return 1;`);
+    await sleep(6000);
+    return pills;
+  };
+  const imgsOf=b=>(JSON.stringify(b||{}).match(/data:image\//g)||[]).length;
+  const sigOf=b=>{const m=/data:image\/[a-z]+;base64,([A-Za-z0-9+/=]{800,})/.exec(JSON.stringify(b||{}));return m?createHash('sha256').update(m[1]).digest('hex').slice(0,16):'';};
+
+  received.length=0;
+  const r1=await shotAndSend('Describe the first screenshot.');
+  const stored1=await evaluate(rf,`const s=await chrome.storage.local.get('orbit'); const m=(s.orbit?.chats?.[0]?.messages||[]).find(x=>x.role==='user'); return JSON.stringify({content:typeof m?.content, refs:(m?.refs||[]).map(r=>({kind:r.kind,dataLen:(r.dataUrl||'').length}))});`);
+  const t1=received.filter(r=>/chat\/completions/.test(r.path)).at(-1)?.body;
+  pageVariant='BRAVO';
+  await evaluate(rf,`const t=(await chrome.tabs.query({})).find(x=>x.url===${JSON.stringify(canaryUrl)}); if(t){await chrome.tabs.update(t.id,{active:true}); await chrome.tabs.reload(t.id);} return 1;`);
+  await sleep(2200);
+  received.length=0;
+  const r2=await shotAndSend('Now describe the second screenshot.');
+  const t2=received.filter(r=>/chat\/completions/.test(r.path)).at(-1)?.body;
+
+  record('turn 1 attaches a real screenshot and sends exactly one image', /^1\/[1-9]/.test(String(r1))&&imgsOf(t1)===1, `attached(count/imgBytes)=${r1} images=${imgsOf(t1)} stored=${stored1}`);
+  record('turn 2 sends ONLY the new image, not both', /^1\/[1-9]/.test(String(r2))&&imgsOf(t2)===1, `attached=${r2} images=${imgsOf(t2)}`);
+  record('the image kept is the new capture, not the stale one', !!sigOf(t2)&&sigOf(t1)!==sigOf(t2), `first=${sigOf(t1).slice(0,14)} second=${sigOf(t2).slice(0,14)}`);
+  record('the replaced screenshot is announced to the model, not silently dropped', /no longer sent/.test(JSON.stringify(t2||{})), '');
   provider.close();
 }
 

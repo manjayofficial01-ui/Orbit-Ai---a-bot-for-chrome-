@@ -163,3 +163,10 @@ test('all-sites access stays optional and requestable for captures only',()=>{
   assert.ok(!perms.includes('all_urls'),'<all_urls> must never be a required permission');
   assert.ok(!perms.includes('host_permissions'),'host access must never be required');
 });
+
+test('creating the first chat never discards the message attachments',()=>{
+  assert.match(app,/async function ensureChat\(\)\{let chat=current\(\);if\(chat\)return chat;const keep=structuredClone\(pending\);await newChat\(\);chat=current\(\);pending=keep;renderAttachments\(\);return chat;\}/,
+    'ensureChat must snapshot pending before newChat and restore it after');
+  assert.equal([...app.matchAll(/await ensureChat\(\)/g)].length,3,'chat, agent and research must all use it');
+  assert.doesNotMatch(app,/if\(!chat\)\{await newChat\(\);chat=current\(\);\}/,'no path may auto-create a chat while dropping pending references');
+});

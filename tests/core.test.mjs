@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {normalizeBase,hostPattern,requestBody,responseText,citations,imageUserMessage,markdown,readSSE,generate} from '../dist/core.js';
+import {normalizeBase,hostPattern,requestBody,responseText,citations,imageUserMessage,latestImageTurnIndex,markdown,readSSE,generate} from '../dist/core.js';
 const cfg={base:'https://api.openai.com/v1',model:'test-model',format:'chat',temperature:'',maxTokens:'',effort:'',search:false};
 const messages=[{role:'system',content:'Be helpful'},{role:'user',content:'Hello'}];
 function stream(text,step=3){const b=new TextEncoder().encode(text);let i=0;return new ReadableStream({pull(c){if(i>=b.length)return c.close();c.enqueue(b.slice(i,i+=step));}});}
@@ -89,4 +89,25 @@ test('image bytes are excluded from the text budget but still bounded by the tra
   assert.equal(small.messages[0].content[1].image_url.url.startsWith('data:image/png'),true);
   const huge=[imageUserMessage('t',['data:image/png;base64,'+'A'.repeat(6*1024*1024)],'chat')];
   assert.throws(()=>requestBody(base,huge),/budget/,'an oversized image must be refused before sending');
+});
+
+// Only the most recent screenshot stays in the request; older ones must not be replayed.
+const shot=d=>({kind:'screenshot',title:'s',url:'u',dataUrl:d});
+test('latest image turn index finds the newest screenshot message',()=>{
+  const msgs=[{role:'user',content:'a',refs:[shot('data:image/png;base64,A')]},
+              {role:'assistant',content:'ok',state:'complete'},
+              {role:'user',content:'b',refs:[shot('data:image/png;base64,B')]}];
+  assert.equal(latestImageTurnIndex(msgs),2);
+});
+test('a follow-up with no new image keeps the existing screenshot attached',()=>{
+  const msgs=[{role:'user',content:'look',refs:[shot('data:image/png;base64,A')]},{role:'assistant',content:'ok',state:'complete'},{role:'user',content:'and the button?'}];
+  assert.equal(latestImageTurnIndex(msgs),0);
+});
+test('no images at all reports none to keep',()=>{
+  assert.equal(latestImageTurnIndex([{role:'user',content:'hi',refs:[{kind:'text',text:'t'}]}]),-1);
+  assert.equal(latestImageTurnIndex([]),-1);
+  assert.equal(latestImageTurnIndex(undefined),-1);
+});
+test('a screenshot reference without data does not count',()=>{
+  assert.equal(latestImageTurnIndex([{role:'user',content:'x',refs:[{kind:'screenshot'}]}]),-1);
 });

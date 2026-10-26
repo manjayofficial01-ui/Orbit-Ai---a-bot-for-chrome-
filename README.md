@@ -95,6 +95,7 @@ History saving is controlled by the active provider profile's Save conversations
 - 100 conversations; application save budget 8 MB (export/delete when reached).
 - 60,000-character serialized generation body budget, not an exact token count.
 - At most 3 references; text references are capped at 24,000 characters, screenshots at roughly 3.5 MB data URL, and text files under 100 KB.
+- **Only your most recent screenshot is sent.** Earlier screenshots stay in the conversation as text but their image data is dropped, so a new capture replaces the old one instead of piling up behind it and being re-billed every turn. Follow-up questions about the screenshot you just took still work.
 - Image text reading: images under 6 MB file size; the result is capped at 24,000 characters. The model path has a 120-second limit and needs a vision-capable model plus a granted provider host; the on-device fallback has a 90-second limit, an 8 MB encoded-image cap, English only, and starts once (~1.2 s cold, ~2 s per screenshot on this machine).
 - 250,000-character generated output cap and five-minute request timeout.
 - Research with Reach: at most four proposed search/read calls per run (declined and unsupported proposals count toward the budget), a 20-second bridge timeout for capability reads and 90 seconds per search/read call, at most 10 items and 12,000 characters of text per item from the bridge, one corrective re-prompt if the model's first planning reply is prose instead of a directive, and a ten-minute overall research cap.

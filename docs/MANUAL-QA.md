@@ -109,3 +109,12 @@ Automated coverage exists for this (`npm run verify:chrome`, 34/34): Fetch model
 51. With a key whose org cannot list models (or any endpoint that 404s `/models`): confirm the failure says the list endpoint is unavailable and that your model may still work, then confirm **Test connection** still reports the model working. This is the reported bug.
 52. Google Gemini: choose the provider, paste a `AIza...` key, press Fetch models, pick a `gemini-…` model, then Test connection. Confirm the request uses Chat Completions and the output cap field is `max_tokens` — if you switch Gemini to the Responses format, Google ignores it, so Test connection is the check that catches that.
 53. Set API format to Responses with a chat-only compatible provider and press Test connection: confirm the 404 advice tells you to switch the format rather than just failing.
+
+## Cycle 11 — screenshot attachment fixes (2026-10-26)
+
+Covered by `npm run verify:chrome` (38/38, two consecutive clean runs): the first message in a fresh workspace now carries its screenshot, and a second screenshot replaces rather than joins the first. Confirm on real content:
+
+54. Open Orbit with NO conversations yet, click Screenshot on an X/photo post, Attach, Send. Ask "what is in this image?" — the model should clearly have the image. Before this fix the first attachment was silently discarded.
+55. Then navigate to a different image post, Screenshot, Attach, Send "describe this one". Confirm it describes the NEW post, not the previous one.
+56. Ask a follow-up about the same screenshot without re-capturing ("what colour was the button?") — it should still answer, because the most recent screenshot stays attached.
+57. Check provider usage: a long screenshot conversation should no longer re-upload the same image on every turn.

@@ -1,5 +1,20 @@
 # Modernization Changelog
 
+## Cycle 11 — 2026-10-26 — fix: screenshots were dropped on the first message and replayed forever after — v2.9.1
+
+Owner report: Orbit read an X post's image correctly once, then stayed "stuck in the same image" across refreshes and new posts.
+
+**Two independent defects, both real, both found by driving the real extension against a local stand-in provider:**
+
+1. **The first attachment was silently discarded.** `send()` auto-creates a chat when none exists, and `newChat()` clears `pending` — so on the very first message of a workspace the screenshot you had just attached was thrown away before the message was built. Confirmed directly: the stored user message had `refs:[]` while the dialog held 33 KB of image data. Fixed with `ensureChat()`, which snapshots `pending` across the auto-create and restores it; chat, Agent mode and Reach research all now use it.
+2. **Every earlier screenshot was replayed on every turn.** `buildMessages` attached image data from *all* retained user messages, so an old capture was re-sent ahead of a new one — which is what "stuck in the same image" looked like from the model's side — and re-billed each turn. Fixed: only the most recent image-bearing turn keeps its image data; earlier ones become a text note telling the model the screenshot is no longer attached. Follow-up questions about the current screenshot still work.
+
+The agent loop already pruned step captures; the chat path had no equivalent, which is why the bug was chat-only.
+
+**Verification.** 150 → **155** Node tests (4 for `latestImageTurnIndex`, 1 gate for `ensureChat`) + 12 Python, `check` exit 0. `verify:chrome` extended to **38/38** with a two-turn replay test on a fresh page and empty chat: turn 1 attaches and sends exactly one image, turn 2 sends **only the new** image, the retained payload hashes differently from the first, and the replaced screenshot is announced rather than silently dropped. Two consecutive clean runs; one earlier run flaked while the harness was mid-edit.
+
+**Honest note on the process:** three of the intermediate failures were my test's fault, not the product's — comparing JPEG base64 at a fixed offset hit Chrome's identical metadata header and EOI padding, so the "different capture" assertion only became meaningful once it hashed the whole payload. The `refs:[]` dump is what turned speculation into a diagnosis.
+
 ## Cycle 10 — 2026-10-26 — fix + feature: separate model listing from model testing; Google Gemini preset — v2.9.0 — branch `modernization/2026-10-26-c7`
 
 Owner report: a working OpenAI model appeared "not working", and fetching models and testing them should be separate actions.

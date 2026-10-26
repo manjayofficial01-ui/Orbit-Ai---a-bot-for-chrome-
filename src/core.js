@@ -67,6 +67,13 @@ export function imageUserMessage(text,dataUrls,format){
  if(format==='responses')return {role:'user',content:[{type:'input_text',text},...urls.map(image_url=>({type:'input_image',image_url,detail:'auto'}))]};
  return {role:'user',content:[{type:'text',text},...urls.map(url=>({type:'image_url',image_url:{url,detail:'auto'}}))]};
 }
+// Screenshots are current-turn context, not permanent history: without this, every earlier image is
+// replayed on every request, so a new capture is buried behind an old one and billed again each turn.
+export function latestImageTurnIndex(messages){
+ let last=-1;
+ (messages||[]).forEach((m,i)=>{ if(m&&m.role==='user'&&(m.refs||[]).some(r=>r&&r.kind==='screenshot'&&r.dataUrl)) last=i; });
+ return last;
+}
 export function markdown(chat){return '# '+chat.title+'\n\n'+chat.messages.map(m=>'## '+m.role+'\n\n'+m.content+(m.state&&m.state!=='complete'?'\n\n['+m.state+']':'')).join('\n\n');}
 export async function readSSE(stream,onEvent){
  const reader=stream.getReader(),decoder=new TextDecoder();let buffer='',data=[],event='',ended=false;
