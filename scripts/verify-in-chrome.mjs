@@ -14,7 +14,7 @@
 //     approves a prompt, which headless cannot do, so the capture test runs against a temporary
 //     fixture copy of dist/ whose manifest carries host_permissions. The shipped manifest keeps the
 //     optional-permission model; its refusal path is asserted too.
-import {spawn} from 'node:child_process';
+import {spawn,execFileSync} from 'node:child_process';
 import {mkdirSync, existsSync, readFileSync, writeFileSync, cpSync, rmSync} from 'node:fs';
 import {createServer} from 'node:http';
 import {tmpdir} from 'node:os';
@@ -62,9 +62,18 @@ const webPort=server.address().port;
 
 const chrome=findChrome();
 const PORT=9339;
+// A stale browser on the debug port makes this hang confusingly, so refuse to start against one.
+if(await (async()=>{try{return (await fetch(`http://127.0.0.1:${PORT}/json/version`)).ok;}catch{return false;}})()){
+  console.error(`Port ${PORT} is already serving CDP — another Chrome owns it. Close it and retry.`);
+  process.exit(2);
+}
 const child=spawn(chrome,['--headless=new',`--user-data-dir=${PROFILE}`,`--remote-debugging-port=${PORT}`,
   '--disable-gpu','--no-first-run','--no-default-browser-check','about:blank'],{stdio:['ignore','pipe','pipe']});
 let chromeErr=''; child.stderr.on('data',d=>chromeErr+=d.toString());
+// SIGTERM does not tear down Chrome's process tree on Windows, so every exit path must kill the tree
+// explicitly or the run leaks headless browsers that block the next one.
+const killChrome=()=>{try{ if(process.platform==='win32') execFileSync('taskkill',['/PID',String(child.pid),'/T','/F'],{stdio:'ignore'}); else child.kill('SIGKILL'); }catch{}};
+process.on('exit',killChrome);
 
 const cdpGet=async p=>{try{const r=await fetch(`http://127.0.0.1:${PORT}${p}`);return r.ok?await r.json():null;}catch{return null;}};
 let version=null;
@@ -340,6 +349,7 @@ if(cap?.ok){
   record('an empty model reply falls back to the local engine and labels it', /bundled engine/.test(fallback?.note||'')&&/\[Image text · local OCR/.test(fallback?.preview||''),
     JSON.stringify({note:(fallback?.note||'').slice(0,110),preview:(fallback?.preview||'').slice(0,60),waitedMs:fallback?.waitedMs}));
   // ---- the reported bug: a new screenshot must REPLACE the previous one, not pile up behind it ----
+  mode='transcribe';   // the fallback test above leaves the provider returning whitespace
   const canaryUrl=`http://127.0.0.1:${webPort}/`;
   await evaluate(fx,`const s=await chrome.storage.local.get('orbit'); await chrome.storage.local.set({orbit:{...s.orbit,chats:[],current:''}}); return 1;`);
   await send('Target.closeTarget',{targetId:fixUi2}); await sleep(700);
@@ -376,10 +386,34 @@ if(cap?.ok){
   record('turn 2 sends ONLY the new image, not both', /^1\/[1-9]/.test(String(r2))&&imgsOf(t2)===1, `attached=${r2} images=${imgsOf(t2)}`);
   record('the image kept is the new capture, not the stale one', !!sigOf(t2)&&sigOf(t1)!==sigOf(t2), `first=${sigOf(t1).slice(0,14)} second=${sigOf(t2).slice(0,14)}`);
   record('the replaced screenshot is announced to the model, not silently dropped', /no longer sent/.test(JSON.stringify(t2||{})), '');
+
+  // ---- role differentiation, measured rather than eyeballed ----
+  // Page.captureScreenshot never resolves for a background tab, so foreground the page first.
+  await send('Target.activateTarget',{targetId:replayTarget}); await sleep(700);
+  await send('Emulation.setDeviceMetricsOverride',{width:560,height:900,deviceScaleFactor:1,mobile:false},rf);
+  await sleep(400);
+  const roles=await evaluate(rf,`
+    const u=getComputedStyle(document.querySelector('.message.user .body'));
+    const a=getComputedStyle(document.querySelector('.message.assistant .body'));
+    const page=getComputedStyle(document.querySelector('#messages'));
+    return JSON.stringify({userBg:u.backgroundColor,asstBg:a.backgroundColor,pageBg:page.backgroundColor,
+      spine:a.borderLeftWidth+' '+a.borderLeftColor,asstBorder:a.borderTopWidth,userBorder:u.borderTopWidth,
+      identical:u.backgroundColor===a.backgroundColor,
+      roleColors:{user:getComputedStyle(document.querySelector('.message.user > .role')).color,asst:getComputedStyle(document.querySelector('.message.assistant > .role')).color}});`);
+  const rs=JSON.parse(roles||'{}');
+  record('user bubble and answer card use different surfaces', rs.identical===false&&!!rs.asstBg&&!!rs.userBg, roles.slice(0,170));
+  record('the answer card carries an accent spine the bubble lacks', /^3px/.test(rs.spine||'')&&rs.asstBorder==='1px'&&rs.userBorder==='1px', `spine=${rs.spine}`);
+  record('role labels are visually distinct', rs.roleColors?.user!==rs.roleColors?.asst, JSON.stringify(rs.roleColors));
+  for(const theme of ['dark','light']){
+    await evaluate(rf,`document.documentElement.dataset.theme=${JSON.stringify(theme)}; document.querySelector('#messages').scrollTop=0; return 1;`);
+    await sleep(400);
+    const png=await send('Page.captureScreenshot',{format:'png'},rf);
+    if(png.result?.data){const f=join(OUT,`orbit-chat-${theme}.png`);writeFileSync(f,Buffer.from(png.result.data,'base64'));shots.push(f);}
+  }
   provider.close();
 }
 
-server.close(); ws.close(); child.kill('SIGTERM'); await sleep(600);
+server.close(); ws.close(); killChrome(); await sleep(600);
 if(!KEEP) rmSync(PROFILE,{recursive:true,force:true});
 
 const failed=results.filter(r=>!r.ok);

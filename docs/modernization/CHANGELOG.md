@@ -1,5 +1,17 @@
 # Modernization Changelog
 
+## Cycle 12 — 2026-10-26 — polish: distinguish the owner's message from an Orbit answer — v2.9.2
+
+Owner request, with a screenshot showing the two roles hard to tell apart. The cause was structural: the user bubble was a low-contrast `--offset` box and **the assistant answer had no container at all** — just bare text on the page background.
+
+- **You**: tinted with `--primary-soft` plus a primary-tinted border, right-aligned, and the `YOU` label now carries the accent colour.
+- **Orbit**: a real card — `--surface-2` background, 1 px border, a 3 px primary left spine, and a small accent dot before the `ORBIT` label.
+- Existing tokens only; no new colours, so light and dark stay consistent. Contrast measured, not assumed: user surface `rgb(38,62,62)` vs answer card `rgb(32,37,36)` vs page background, spine `3px rgb(88,175,178)`, role labels `rgb(88,175,178)` vs `rgb(164,173,169)`.
+
+`verify-in-chrome` grew three measured checks plus dark and light conversation captures — **41/41**, 155 Node + 12 Python tests, `check` exit 0.
+
+**Two harness bugs fixed on the way, both of which could have produced false confidence:** `child.kill('SIGTERM')` does not tear down Chrome's process tree on Windows, so repeated runs leaked headless browsers and hung on the debug port — the harness now uses `taskkill /T /F` on an `exit` hook and refuses to start if the port is already taken. And `Page.captureScreenshot` never resolves for a background tab, so the new screenshots needed the page foregrounded first. A third, self-inflicted: the fallback test left the mock provider returning whitespace, so the first two answer cards rendered empty and looked like a product regression.
+
 ## Cycle 11 — 2026-10-26 — fix: screenshots were dropped on the first message and replayed forever after — v2.9.1
 
 Owner report: Orbit read an X post's image correctly once, then stayed "stuck in the same image" across refreshes and new posts.
