@@ -1,5 +1,17 @@
 # Modernization Changelog
 
+## Cycle 8 — 2026-10-26 — research + feature: provider-hosted X search and code interpreter — branch `modernization/2026-10-26-c7`
+
+The owner added a reference folder, `orbit-agent/`, and asked that Orbit be upgraded with its "engines". Reviewed all 11 files. **It is not a library of engines and not Orbit's own earlier code** — it is a smaller xAI-only sibling extension, and its README states plainly that the original repository could not be fetched and this is "an independently implemented replacement scaffold". Full analysis in `docs/modernization/ORBIT_AGENT_REVIEW.md`.
+
+- **Verified, not assumed:** `node --check` shows `orbit-agent/panel.js` **does not parse** (unterminated string literal at line 8), so that extension cannot run at all; its own `check_package.py` passes 4/4 only because it never checks syntax — which `VALIDATION.txt` admits. No LICENSE file exists in the folder. It is now gitignored, matching `Agent-Reach-main/` and `ChromeBot-Ai/`.
+- On 13 of 14 comparison axes Orbit is already ahead (providers, 16 agent tools vs 6, shadow DOM, documentId-pinned targets, navigation commit-wait, local OCR, error-body privacy, CSP, tests). Adopting it wholesale would have been a downgrade.
+- **Adopted — the one additive capability:** xAI hosted server tools. Settings → Advanced now offers **X search** (`x_search` with `enable_image_understanding`) and **code interpreter** (`code_interpreter`) alongside the existing web search. Tool type strings were verified against docs.x.ai before building, and `enable_image_understanding` is sent only where it is documented.
+- Guardrails: Responses format only; `x_search`/`code_interpreter` refused on any host other than `https://api.x.ai`; and **all hosted tools are stripped from Agent-mode and Reach-research requests** so a supervised run cannot start billing without a prompt.
+- 8 new behavioral tests in `tests/core.test.mjs` (140 Node + 12 Python), plus a real-Chrome assertion that the three controls render in Settings → Advanced (20/20).
+- Rejected with reasons recorded in the review: its indexed-at-write-time element lookup, `innerText` reading, provider error-body passthrough, 12-round budget, single-provider client.
+- **Open decision:** its native function-calling loop is the one architectural idea worth taking — Orbit's fenced-JSON protocol exists to support endpoints without tool calling, so this would be an optional per-profile mode, not a replacement. Needs its own cycle.
+
 ## Cycle 7 — 2026-10-26 — feature + fix: local OCR and real-Chrome verification — v2.7.0 — branch `modernization/2026-10-26-c7`
 
 ### User-visible

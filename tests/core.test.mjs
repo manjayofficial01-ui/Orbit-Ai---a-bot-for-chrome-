@@ -35,3 +35,36 @@ test('incomplete Responses JSON is failure',async()=>assert.rejects(()=>mockGene
 test('manifest least privilege and packaged code',()=>{const m=JSON.parse(fs.readFileSync(new URL('../dist/manifest.json',import.meta.url)));assert.equal(m.manifest_version,3);assert.equal(m.minimum_chrome_version,'116');assert.equal(m.host_permissions,undefined);assert.equal(m.content_scripts,undefined);assert.ok(!m.permissions.includes('unlimitedStorage'));const csp=m.content_security_policy.extension_pages;assert.ok(csp.includes("script-src 'self'"));assert.ok(!/\[/.test(csp),'CSP source lists must not contain bracketed (IPv6 literal) sources Chrome will ignore');});
 test('data URL images use transport budget rather than text budget',()=>{const image='data:image/jpeg;base64,'+'a'.repeat(100000);const mm=[{role:'user',content:[{type:'text',text:'describe'},{type:'image_url',image_url:{url:image}}]}];assert.doesNotThrow(()=>requestBody(cfg,mm));});
 test('oversized screenshot transport is rejected',()=>{const image='data:image/jpeg;base64,'+'a'.repeat(5000001);const mm=[{role:'user',content:[{type:'text',text:'describe'},{type:'image_url',image_url:{url:image}}]}];assert.throws(()=>requestBody(cfg,mm),/5 MB/);});
+
+// Provider-hosted tool matrix (xAI x_search / code_interpreter added in cycle 8).
+const hosted=(over={})=>requestBody({base:'https://api.x.ai/v1',model:'m',format:'responses',temperature:'',maxTokens:'',effort:'',search:false,xsearch:false,code:false,...over},messages);
+test('hosted web search keeps working on official OpenAI responses',()=>{
+  const b=requestBody({base:'https://api.openai.com/v1',model:'m',format:'responses',temperature:'',maxTokens:'',effort:'',search:true},messages);
+  assert.deepEqual(b.tools,[{type:'web_search'}]);
+});
+test('x search sends the documented xAI shape with image understanding',()=>{
+  assert.deepEqual(hosted({xsearch:true}).tools,[{type:'x_search',enable_image_understanding:true}]);
+});
+test('code interpreter is offered only as a hosted tool type',()=>{
+  assert.deepEqual(hosted({code:true}).tools,[{type:'code_interpreter'}]);
+});
+test('enabled hosted tools combine in a stable order',()=>{
+  assert.deepEqual(hosted({search:true,xsearch:true,code:true}).tools,
+    [{type:'web_search'},{type:'x_search',enable_image_understanding:true},{type:'code_interpreter'}]);
+});
+test('x search and code interpreter refuse non-xAI hosts',()=>{
+  for(const over of [{xsearch:true},{code:true}])
+    assert.throws(()=>requestBody({base:'https://api.openai.com/v1',model:'m',format:'responses',temperature:'',maxTokens:'',effort:'',search:false,...over},messages),/xAI/);
+});
+test('hosted tools require the responses format',()=>{
+  assert.throws(()=>hosted({xsearch:true,format:'chat'}),/Responses/);
+  assert.throws(()=>hosted({code:true,format:'chat'}),/Responses/);
+});
+test('no hosted tool selected sends no tools key at all',()=>{
+  assert.equal(hosted().tools,undefined);
+});
+test('agent and research calls never inherit hosted tools',async()=>{
+  const {requestAgentBody}=await import('../dist/core.js');
+  for(const over of [{search:true},{xsearch:true},{code:true},{search:true,xsearch:true,code:true}])
+    assert.equal(requestAgentBody({base:'https://api.x.ai/v1',model:'m',format:'responses',temperature:'',maxTokens:'',effort:'',...over},messages).tools,undefined);
+});

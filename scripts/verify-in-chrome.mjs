@@ -101,6 +101,18 @@ const boot=await evaluate(ui,`return {
 record('extension page boots', boot?.ready==='complete'&&boot?.composer===true&&boot?.welcome===true, JSON.stringify(boot).slice(0,180));
 record('no page errors during boot', consoleErrors.length===0, consoleErrors.slice(0,2).join(' | ').slice(0,200));
 
+const adv=await evaluate(ui,`
+  document.getElementById('settings').click();
+  document.querySelector('[data-settings-tab="advanced"]').click();
+  await new Promise(r=>setTimeout(r,250));
+  const ids=['search','xsearch','code'];
+  const out=ids.map(id=>{const el=document.getElementById(id);
+    return {id,exists:!!el,type:el?.type,checked:el?.checked,
+      inPanel:!!el?.closest('[data-settings-panel="advanced"]')};});
+  document.getElementById('settingsDialog').close();
+  return out;`);
+record('hosted-tool checkboxes exist in Settings → Advanced', Array.isArray(adv)&&adv.length===3&&adv.every(x=>x.exists&&x.type==='checkbox'&&x.checked===false), JSON.stringify(adv));
+
 const shots=[];
 for(const w of widths){
   await send('Emulation.setDeviceMetricsOverride',{width:w,height:900,deviceScaleFactor:1,mobile:false},ui);

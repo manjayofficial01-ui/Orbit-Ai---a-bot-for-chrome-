@@ -102,7 +102,9 @@
   </section>
   <section data-settings-panel="advanced" hidden>
     <div class="form-grid two"><label>Temperature<input id="temperature" type="number" min="0" max="2" step="0.1" placeholder="Provider default"></label><label>Output token cap<input id="maxTokens" type="number" min="1" max="128000" placeholder="Provider default"></label><label>Chat token parameter<select id="tokenField"><option>max_completion_tokens</option><option>max_tokens</option></select></label><label>Reasoning effort<select id="effort"><option value="">Provider default</option><option>low</option><option>medium</option><option>high</option></select></label></div>
-    <label class="check"><input id="search" type="checkbox"> <span><strong>Provider-hosted web search</strong><small>Responses format on supported official hosts; provider charges may apply.</small></span></label>
+    <label class="check"><input id="search" type="checkbox"> <span><strong>Provider-hosted web search</strong><small>Responses format on official OpenAI or xAI hosts. The provider browses on your behalf and may bill per search.</small></span></label>
+<label class="check"><input id="xsearch" type="checkbox"> <span><strong>Provider-hosted X search</strong><small>xAI Responses endpoint only. Searches X with image understanding enabled; your query and any attached image are sent to xAI and may be billed.</small></span></label>
+<label class="check"><input id="code" type="checkbox"> <span><strong>Provider-hosted code interpreter</strong><small>xAI Responses endpoint only. Runs generated code on the provider's servers, not your computer, and may bill for compute.</small></span></label>
     <label class="check"><input id="saveHistory" type="checkbox"> <span><strong>Save conversations locally</strong><small>Conversation data is not encrypted.</small></span></label>
   </section>
   <div id="settingsStatus" role="status" aria-live="polite"></div>

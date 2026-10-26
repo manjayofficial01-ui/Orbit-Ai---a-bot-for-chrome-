@@ -13,14 +13,24 @@ export function requestBody(config,messages){
  if(config.temperature!=='') {const n=Number(config.temperature);if(!Number.isFinite(n)||n<0||n>2)throw Error('Temperature must be 0–2.');body.temperature=n;}
  if(config.maxTokens!==''){const n=Number(config.maxTokens);if(!Number.isInteger(n)||n<1||n>128000)throw Error('Output cap must be 1–128000.');body[config.format==='responses'?'max_output_tokens':config.tokenField||'max_completion_tokens']=n;}
  if(config.effort) {if(config.format==='responses')body.reasoning={effort:config.effort};else body.reasoning_effort=config.effort;}
- if(config.search){if(config.format!=='responses'||!['https://api.openai.com','https://api.x.ai'].includes(new URL(config.base).origin))throw Error('Hosted search requires Responses on official OpenAI or xAI hosts.');body.tools=[{type:'web_search'}];}
+ const hosted=[];
+ if(config.search)hosted.push({type:'web_search'});
+ if(config.xsearch)hosted.push({type:'x_search',enable_image_understanding:true});
+ if(config.code)hosted.push({type:'code_interpreter'});
+ if(hosted.length){
+  const origin=new URL(config.base).origin;
+  if(config.format!=='responses')throw Error('Provider-hosted tools require the Responses API format.');
+  if(config.search&&!['https://api.openai.com','https://api.x.ai'].includes(origin))throw Error('Hosted web search requires Responses on official OpenAI or xAI hosts.');
+  if((config.xsearch||config.code)&&origin!=='https://api.x.ai')throw Error('X search and the code interpreter are hosted only on the official xAI Responses endpoint.');
+  body.tools=hosted;
+ }
  const budgetView=JSON.stringify(body,(k,v)=>typeof v==='string'&&v.startsWith('data:image/')?'[attached image]':v);
  if(budgetView.length>60000)throw Error('Conversation exceeds the 60,000-character text budget. Export it and start a new chat.');
  if(JSON.stringify(body).length>5000000)throw Error('Request exceeds the 5 MB transport budget. Remove or reduce screenshot attachments.');
  return body;
 }
 export function requestAgentBody(config,messages){
-  const body=requestBody({...config,search:false},messages);
+  const body=requestBody({...config,search:false,xsearch:false,code:false},messages);
   body.stream=false;
   const budgetView=JSON.stringify(body,(k,v)=>typeof v==='string'&&v.startsWith('data:image/')?'[attached image]':v);
   if(budgetView.length>60000) throw Error('Conversation exceeds the 60,000-character text budget. Export it and start a new chat.');

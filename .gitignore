@@ -21,3 +21,6 @@ Agent-Reach-main/
 
 # Local research copies of other projects (original lives in the Lab folder)
 ChromeBot-Ai/
+# Reference prototype dropped in for study (2026-10-26): xAI-only sibling, panel.js does not parse,
+# no license file. Reviewed for ideas only — see docs/modernization/ORBIT_AGENT_REVIEW.md.
+orbit-agent/
