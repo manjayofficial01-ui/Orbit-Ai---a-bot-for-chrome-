@@ -146,7 +146,7 @@ man.host_permissions=['<all_urls>']; delete man.optional_host_permissions;
 writeFileSync(join(FIX,'manifest.json'),JSON.stringify(man,null,2));
 const fixId=(await send('Extensions.loadUnpacked',{path:FIX})).result?.id;
 const fixUi=(await send('Target.createTarget',{url:`chrome-extension://${fixId}/index.html`})).result.targetId;
-const fx=await attach(fixUi);
+let fx=await attach(fixUi);
 // The fixture page needs a moment before its module graph is importable.
 let fxReady=false;
 for(let i=0;i<20&&!fxReady;i++){ await sleep(400);
@@ -210,6 +210,76 @@ if(cap?.ok){
   await evaluate(fx,`document.getElementById('screenshot').click(); await new Promise(r=>setTimeout(r,2500)); return 1;`);
   const dlgPng=await send('Page.captureScreenshot',{format:'png'},fx);
   if(dlgPng.result?.data){const f=join(OUT,'orbit-screenshot-dialog.png');writeFileSync(f,Buffer.from(dlgPng.result.data,'base64'));shots.push(f);}
+
+  // ---------- 3. the model path, against a local stand-in provider ----------
+  // The owner's real key is never read by this script. A loopback endpoint exercises the same code:
+  // preconditions, request construction, the image actually leaving the machine, and the fallback.
+  const TRANSCRIPT='Invoices and Receipts\nReference number QX-4417\nTotal due: 1,284.50';
+  const received=[];
+  let mode='transcribe';
+  const provider=createServer((req,res)=>{
+    let raw='';req.on('data',c=>{raw+=c;});
+    req.on('end',()=>{
+      let body=null;try{body=JSON.parse(raw);}catch{}
+      received.push({path:req.url,body});
+      res.writeHead(200,{'content-type':'application/json'});
+      res.end(JSON.stringify({choices:[{message:{content:mode==='transcribe'?TRANSCRIPT:'   '}}]}));
+    });
+  });
+  await new Promise(r=>provider.listen(0,'127.0.0.1',r));
+  const pPort=provider.address().port;
+
+  await evaluate(fx,`
+    await chrome.storage.local.set({orbit:{chats:[],current:'',provider:'custom',theme:'dark',fontSize:'medium',recentChats:[],recentIndex:-1,
+      profiles:{custom:{base:'http://127.0.0.1:${pPort}/v1',model:'mock-vision',format:'chat',temperature:'',maxTokens:'',
+        tokenField:'max_completion_tokens',effort:'',search:false,xsearch:false,code:false,instructions:'',memory:'',
+        saveHistory:true,smartContext:false,contextDepth:'balanced',autoTitle:true}}}});
+    return 1;`);
+  // A fresh page instance, not a reload: reloading leaves the previous OCR worker behind and
+  // muddies the fallback measurement.
+  await send('Target.closeTarget',{targetId:fixUi});
+  await sleep(700);
+  const fixUi2=(await send('Target.createTarget',{url:`chrome-extension://${fixId}/index.html`})).result.targetId;
+  fx=await attach(fixUi2);
+  // Creating a tab makes it active; the capture test needs the canary page active again.
+  await send('Target.activateTarget',{targetId:web});
+  await sleep(1500);
+  const seeded=await evaluate(fx,`return {connection:document.getElementById('connection')?.textContent, hasPrompt:!!document.getElementById('prompt')};`);
+  record('fixture booted against the local stand-in provider', seeded?.hasPrompt===true&&/mock-vision/.test(seeded?.connection||''), JSON.stringify(seeded));
+
+  const modelRun=await evaluate(fx,`
+    document.getElementById('screenshot').click();
+    await new Promise(r=>setTimeout(r,2500));
+    document.getElementById('ocrShot').click();
+    await new Promise(r=>setTimeout(r,5000));
+    return {note:document.getElementById('contextNote').textContent,
+      preview:document.getElementById('contextPreview').value,
+      editable:!document.getElementById('contextPreview').readOnly};`);
+  const sent=received.at(-1)?.body||{};
+  const flat=JSON.stringify(sent);
+  record('image reading calls the configured model endpoint', received.length>0&&sent.model==='mock-vision', `requests=${received.length} model=${sent.model} path=${received.at(-1)?.path}`);
+  record('the image really is sent to the provider (SECURITY.md claim)', /"image_url":\{"url":"data:image\//.test(flat), `payload bytes=${flat.length}`);
+  record('hosted provider tools are not attached to a transcription call', sent.tools===undefined, `tools=${JSON.stringify(sent.tools)}`);
+  record('model transcription lands in the editable preview, labelled', /Transcribed by your model \(mock-vision\)/.test(modelRun?.note||'')
+    &&/\[Image text · transcribed by mock-vision\]/.test(modelRun?.preview||'')&&modelRun?.editable===true
+    &&/QX-4417/.test(modelRun?.preview||''), JSON.stringify({note:(modelRun?.note||'').slice(0,80),preview:(modelRun?.preview||'').slice(0,60)}));
+
+  // Make the model return nothing: the fallback must engage and must say so.
+  mode='empty';
+  await evaluate(fx,`document.getElementById('screenshot').click(); await new Promise(r=>setTimeout(r,2500)); return 1;`);
+  const fallback=await evaluate(fx,`
+    document.getElementById('ocrShot').click();
+    const t0=Date.now();
+    while(Date.now()-t0<45000){
+      const n=document.getElementById('contextNote').textContent||'';
+      if(!/Reading the image with your configured model|falling back to the on-device engine/.test(n)) break;
+      await new Promise(r=>setTimeout(r,500));
+    }
+    return {note:document.getElementById('contextNote').textContent, preview:document.getElementById('contextPreview').value.slice(0,90),
+      waitedMs:Date.now()-t0};`);
+  record('an empty model reply falls back to the local engine and labels it', /bundled engine/.test(fallback?.note||'')&&/\[Image text · local OCR/.test(fallback?.preview||''),
+    JSON.stringify({note:(fallback?.note||'').slice(0,110),preview:(fallback?.preview||'').slice(0,60),waitedMs:fallback?.waitedMs}));
+  provider.close();
 }
 
 server.close(); ws.close(); child.kill('SIGTERM'); await sleep(600);
