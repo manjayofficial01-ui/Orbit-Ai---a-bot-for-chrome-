@@ -221,11 +221,24 @@ if(cap?.ok){
     let raw='';req.on('data',c=>{raw+=c;});
     req.on('end',()=>{
       let body=null;try{body=JSON.parse(raw);}catch{}
-      received.push({path:req.url,body});
+      received.push({path:req.url,method:req.method,body});
+      if(mode==='notfound'){res.writeHead(404,{'content-type':'application/json'});res.end(JSON.stringify({error:{message:'model not found'}}));return;}
       res.writeHead(200,{'content-type':'application/json'});
-      res.end(JSON.stringify({choices:[{message:{content:mode==='transcribe'?TRANSCRIPT:'   '}}]}));
+      if(/\/models$/.test(req.url))res.end(JSON.stringify({data:[{id:'mock-vision'},{id:'mock-mini'}]}));
+      else res.end(JSON.stringify({choices:[{message:{content:mode==='empty'?'   ':TRANSCRIPT}}]}));
     });
   });
+  // A trusted click, because chrome.permissions.request() refuses to run outside a real user gesture.
+  const clickEl=async(selector)=>{
+    const box=await evaluate(fx,`const el=document.querySelector(${JSON.stringify(selector)});
+      if(!el||el.hidden||!el.getBoundingClientRect().width) return null;
+      const r=el.getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2,vw:innerWidth,vh:innerHeight};`);
+    if(!box) throw Error('element not clickable: '+selector);
+    if(box.y<0||box.y>box.vh) throw Error(`${selector} is outside the viewport (y=${Math.round(box.y)} of ${box.vh})`);
+    for(const type of ['mousePressed','mouseReleased'])
+      await send('Input.dispatchMouseEvent',{type,x:Math.round(box.x),y:Math.round(box.y),button:'left',clickCount:1,buttons:type==='mousePressed'?1:0},fx);
+    await sleep(300);
+  };
   await new Promise(r=>provider.listen(0,'127.0.0.1',r));
   const pPort=provider.address().port;
 
@@ -246,6 +259,51 @@ if(cap?.ok){
   await sleep(1500);
   const seeded=await evaluate(fx,`return {connection:document.getElementById('connection')?.textContent, hasPrompt:!!document.getElementById('prompt')};`);
   record('fixture booted against the local stand-in provider', seeded?.hasPrompt===true&&/mock-vision/.test(seeded?.connection||''), JSON.stringify(seeded));
+
+  // ---- listing vs testing must be genuinely separate actions ----
+  // Input events are dropped for a background tab, so foreground the extension page for these.
+  await send('Target.activateTarget',{targetId:fixUi2}); await sleep(800);
+  // A fresh target resets emulation; the settings dialog is taller than the default 800x600 window,
+  // which would put the action buttons below the fold and make trusted clicks miss them.
+  await send('Emulation.setDeviceMetricsOverride',{width:900,height:1400,deviceScaleFactor:1,mobile:false},fx);
+  await sleep(400);
+  await evaluate(fx,`document.getElementById('settings').click(); await new Promise(r=>setTimeout(r,400)); return 1;`);
+  received.length=0;
+  await clickEl('#models'); await sleep(2500);
+  const listStatus=await evaluate(fx,`return document.getElementById('settingsStatus').textContent;`);
+  record('Fetch models calls only the list endpoint', received.some(r=>/\/models$/.test(r.path))&&!received.some(r=>/chat\/completions/.test(r.path)),
+    `paths=[${received.map(r=>r.path).join(' ')}]`);
+  record('listing is worded as a list, not a verdict', /Listed 2 models/.test(listStatus||'')&&/press Test connection/.test(listStatus||''), (listStatus||'').slice(0,120));
+
+  received.length=0;
+  await clickEl('#testModel'); await sleep(4000);
+  const testStatus=await evaluate(fx,`return document.getElementById('settingsStatus').textContent;`);
+  const probe=received.find(r=>/chat\/completions/.test(r.path));
+  const cap=probe?.body?.max_tokens ?? probe?.body?.max_completion_tokens;
+  record('Test connection calls only the generation endpoint', !!probe&&!received.some(r=>/\/models$/.test(r.path)),
+    `paths=[${received.map(r=>r.path).join(' ')}]`);
+  record('the probe names the model, bounds cost and carries no hosted tools',
+    probe?.body?.model==='mock-vision'&&cap===64&&probe?.body?.tools===undefined, JSON.stringify({model:probe?.body?.model,cap,tools:probe?.body?.tools}));
+  record('a working model is reported as working', /is working — answered in \d+ ms/.test(testStatus||''), (testStatus||'').slice(0,120));
+
+  // The reported bug: a provider that refuses /models must not make a working model look broken.
+  mode='notfound'; received.length=0;
+  await clickEl('#models'); await sleep(2500);
+  const refused=await evaluate(fx,`return document.getElementById('settingsStatus').textContent;`);
+  record('a refused model list is scoped to the list only', /Model list unavailable \(HTTP 404\)/.test(refused||'')&&/your model can still work/.test(refused||''), (refused||'').slice(0,150));
+  mode='transcribe'; received.length=0;
+  await clickEl('#testModel'); await sleep(4000);
+  const recovered=await evaluate(fx,`return document.getElementById('settingsStatus').textContent;`);
+  record('the same model still tests working after a refused list', /is working — answered in/.test(recovered||''), (recovered||'').slice(0,120));
+
+  const googlePreset=await evaluate(fx,`
+    const p=document.getElementById('provider'); p.value='google'; p.dispatchEvent(new Event('change'));
+    await new Promise(r=>setTimeout(r,300));
+    return JSON.stringify({base:document.getElementById('base').value,tokenField:document.getElementById('tokenField').value,format:document.getElementById('format').value});`);
+  record('Google Gemini preset loads the compatible base and max_tokens',
+    /generativelanguage\.googleapis\.com\/v1beta\/openai/.test(googlePreset)&&/"tokenField":"max_tokens"/.test(googlePreset)&&/"format":"chat"/.test(googlePreset), String(googlePreset));
+  await evaluate(fx,`document.getElementById('settingsDialog').close(); return 1;`);
+  await send('Target.activateTarget',{targetId:web}); await sleep(1200);
 
   const modelRun=await evaluate(fx,`
     document.getElementById('screenshot').click();
