@@ -1,0 +1,165 @@
+// verify-in-chrome.mjs — run the real extension in real Chrome and capture visual + DOM evidence.
+//
+//   node scripts/verify-in-chrome.mjs [--widths=400,720,1280] [--out=<dir>] [--keep]
+//
+// Dev-only: this file is not copied into dist/ and adds no dependency. It needs a local Chrome and
+// uses a throwaway profile outside the repo, so it never touches your signed-in browser.
+//
+// How it works: Chrome ignores --load-extension now, so the extension is installed at runtime with
+// the CDP command Extensions.loadUnpacked, then driven over the DevTools protocol.
+//
+// Two things it deliberately separates:
+//   * smoke checks against the SHIPPED dist/ (rendering, layout overflow, console errors);
+//   * the capture check, which needs a host grant. Chrome only grants host permissions after a user
+//     approves a prompt, which headless cannot do, so the capture test runs against a temporary
+//     fixture copy of dist/ whose manifest carries host_permissions. The shipped manifest keeps the
+//     optional-permission model; its refusal path is asserted too.
+import {spawn} from 'node:child_process';
+import {mkdirSync, existsSync, readFileSync, writeFileSync, cpSync, rmSync} from 'node:fs';
+import {createServer} from 'node:http';
+import {tmpdir} from 'node:os';
+import {join, dirname} from 'node:path';
+import {fileURLToPath} from 'node:url';
+
+const root=join(dirname(fileURLToPath(import.meta.url)),'..');
+const DIST=join(root,'dist');
+const arg=n=>{const m=new RegExp(`--${n}=([^\\s]+)`).exec(process.argv.join(' '));return m?m[1]:null;};
+const widths=(arg('widths')||'400,720,1280').split(',').map(Number);
+const OUT=arg('out')||join(tmpdir(),'orbit-verify');
+const KEEP=process.argv.includes('--keep');
+
+const CHROME_CANDIDATES=[process.env.CHROME_PATH,
+  'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+  'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  '/usr/bin/google-chrome','/usr/bin/chromium-browser','/usr/bin/chromium'].filter(Boolean);
+const findChrome=()=>{
+  const found=CHROME_CANDIDATES.find(p=>existsSync(p));
+  if(!found){console.error('Chrome not found. Set CHROME_PATH=/path/to/chrome and retry.\nLooked for:\n  '+CHROME_CANDIDATES.join('\n  '));process.exit(2);}
+  return found;
+};
+
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const results=[];
+const record=(name,ok,detail)=>{results.push({name,ok,detail});console.log(`${ok?'PASS':'FAIL'}  ${name}${detail?'  — '+detail:''}`);};
+
+if(existsSync(OUT))rmSync(OUT,{recursive:true,force:true});
+mkdirSync(OUT,{recursive:true});
+const PROFILE=join(OUT,'profile'); mkdirSync(PROFILE,{recursive:true});
+
+// A local canary page: identifiable by eye in a screenshot, and with hidden text that must not appear.
+const CANARY='ZEBRA-'+Math.floor(Math.random()*1e4);
+const server=createServer((_q,res)=>{res.writeHead(200,{'content-type':'text/html'});
+  res.end(`<!doctype html><meta charset=utf-8><title>Orbit verify canary</title>
+  <body style="font:30px system-ui;margin:36px;background:#fdf6e3">
+  <h1 style="color:#b58900">Orbit verification target</h1><p>Marker: <b>${CANARY}</b></p>
+  <p style="background:#2aa198;color:#fff;padding:16px">Teal band with white text</p>
+  <p style="display:none">HIDDEN-MUST-NOT-APPEAR</p>`);});
+await new Promise(r=>server.listen(0,'127.0.0.1',r));
+const webPort=server.address().port;
+
+const chrome=findChrome();
+const PORT=9339;
+const child=spawn(chrome,['--headless=new',`--user-data-dir=${PROFILE}`,`--remote-debugging-port=${PORT}`,
+  '--disable-gpu','--no-first-run','--no-default-browser-check','about:blank'],{stdio:['ignore','pipe','pipe']});
+let chromeErr=''; child.stderr.on('data',d=>chromeErr+=d.toString());
+
+const cdpGet=async p=>{try{const r=await fetch(`http://127.0.0.1:${PORT}${p}`);return r.ok?await r.json():null;}catch{return null;}};
+let version=null;
+for(let i=0;i<50;i++){version=await cdpGet('/json/version'); if(version)break; await sleep(400);}
+if(!version){console.error('Chrome did not expose CDP.\n'+chromeErr.slice(0,400)); process.exit(2);}
+console.log('Chrome:',version['Browser']||version['User-Agent']);
+
+const ws=new WebSocket(version.webSocketDebuggerUrl);
+await new Promise(r=>ws.addEventListener('open',r));
+let seq=0; const pending=new Map(); const consoleErrors=[];
+ws.addEventListener('message',e=>{const m=JSON.parse(e.data);
+  if(m.id&&pending.has(m.id)){pending.get(m.id)(m);pending.delete(m.id);}
+  else if(m.method==='Runtime.exceptionThrown')consoleErrors.push(m.params.exceptionDetails?.exception?.description||'exception');
+  else if(m.method==='Log.entryAdded'&&m.params.entry?.level==='error')consoleErrors.push(m.params.entry.text);});
+const send=(method,params={},sessionId)=>new Promise(res=>{const id=++seq;pending.set(id,res);
+  ws.send(JSON.stringify({id,method,params,...(sessionId?{sessionId}:{})}));});
+const attach=async targetId=>(await send('Target.attachToTarget',{targetId,flatten:true})).result.sessionId;
+const evaluate=async(sessionId,fnBody)=>{
+  const r=await send('Runtime.evaluate',{expression:`(async()=>{${fnBody}})()`,awaitPromise:true,returnByValue:true},sessionId);
+  if(r.error) return {__error:r.error.message};
+  return r.result?.result?.value;};
+
+// ---------- 1. shipped dist/, no extra grants: boot + layout ----------
+const extId=(await send('Extensions.loadUnpacked',{path:DIST})).result?.id;
+if(!extId){console.error('loadUnpacked failed: '+JSON.stringify((await send('Extensions.loadUnpacked',{path:DIST})).error));process.exit(2);}
+const uiTarget=(await send('Target.createTarget',{url:`chrome-extension://${extId}/index.html`})).result.targetId;
+const ui=await attach(uiTarget);
+await send('Runtime.enable',{},ui);
+await sleep(1200);
+
+const boot=await evaluate(ui,`return {
+  ready:document.readyState, extId:chrome.runtime?.id||null,
+  welcome:!!document.querySelector('.welcome'), pills:document.querySelectorAll('.welcome-points li').length,
+  composer:!!document.getElementById('prompt'), send:!!document.getElementById('send'),
+  status:document.getElementById('status')?.textContent||''};`);
+record('extension page boots', boot?.ready==='complete'&&boot?.composer===true&&boot?.welcome===true, JSON.stringify(boot).slice(0,180));
+record('no page errors during boot', consoleErrors.length===0, consoleErrors.slice(0,2).join(' | ').slice(0,200));
+
+const shots=[];
+for(const w of widths){
+  await send('Emulation.setDeviceMetricsOverride',{width:w,height:900,deviceScaleFactor:1,mobile:false},ui);
+  await sleep(500);
+  const m=await evaluate(ui,`
+    const de=document.documentElement, bar=document.querySelector('.toolbar');
+    const clipped=bar?[...bar.querySelectorAll('button,select')].filter(el=>el.getBoundingClientRect().right>bar.getBoundingClientRect().right+1).map(el=>el.id||el.textContent.trim().slice(0,14)):[];
+    return {docScrollX:de.scrollWidth-de.clientWidth,
+      bodyScrollX:document.body.scrollWidth-document.body.clientWidth,
+      toolbarOverflow:bar?bar.scrollWidth-bar.clientWidth:null, clipped};`);
+  const png=(await send('Page.captureScreenshot',{format:'png'},ui)).result?.data;
+  const file=join(OUT,`orbit-${w}.png`);
+  if(png){writeFileSync(file,Buffer.from(png,'base64')); shots.push(file);}
+  record(`layout at ${w}px has no horizontal page overflow`, m.docScrollX<=1&&m.bodyScrollX<=1, `docScrollX=${m.docScrollX} bodyScrollX=${m.bodyScrollX} toolbarOverflow=${m.toolbarOverflow}`);
+  record(`every composer control is visible at ${w}px`, m.clipped.length===0, `clipped=[${m.clipped}]`);
+}
+
+// A real webpage tab becomes the active tab, so the capture path is exercised against a supported page.
+const web=(await send('Target.createTarget',{url:`http://127.0.0.1:${webPort}/`})).result.targetId;
+await send('Target.activateTarget',{targetId:web}); await sleep(1500);
+
+// ---------- 2. capture path: refusal on shipped manifest, success on a host-granted fixture ----------
+const refusal=await evaluate(ui,`const m=await import('./page-access.js');
+  try{ await m.captureActiveScreenshot(); return 'UNEXPECTED-SUCCESS'; }
+  catch(e){ return String(e.message).slice(0,160); }`);
+record('capture without a host grant fails honestly (not silently)', refusal!=='UNEXPECTED-SUCCESS'&&typeof refusal==='string', refusal);
+
+const FIX=join(OUT,'fixture'); cpSync(DIST,FIX,{recursive:true});
+const man=JSON.parse(readFileSync(join(FIX,'manifest.json'),'utf8'));
+man.host_permissions=['<all_urls>']; delete man.optional_host_permissions;
+writeFileSync(join(FIX,'manifest.json'),JSON.stringify(man,null,2));
+const fixId=(await send('Extensions.loadUnpacked',{path:FIX})).result?.id;
+const fixUi=(await send('Target.createTarget',{url:`chrome-extension://${fixId}/index.html`})).result.targetId;
+const fx=await attach(fixUi);
+// The fixture page needs a moment before its module graph is importable.
+let fxReady=false;
+for(let i=0;i<20&&!fxReady;i++){ await sleep(400);
+  const r=await evaluate(fx,`return {ready:document.readyState};`);
+  fxReady=r?.ready==='complete'; }
+record('fixture extension page ready', fxReady, '');
+// Creating the fixture tab made it the active tab; the capture test needs the canary page active.
+await send('Target.activateTarget',{targetId:web}); await sleep(1200);
+const cap=await evaluate(fx,`const m=await import('./page-access.js');
+  try{ const r=await m.captureActiveScreenshot(); window.__shot=r.dataUrl;
+       return {ok:true,kind:r.kind,title:r.title,url:r.url,mime:r.dataUrl.slice(5,15),bytes:r.dataUrl.length};
+  }catch(e){ return {ok:false,error:String(e.message).slice(0,160)}; }`);
+record('captureActiveScreenshot() returns a real image', cap?.ok===true&&/^image\//.test(cap.mime||''), JSON.stringify(cap).slice(0,170));
+if(cap?.ok){
+  const dataUrl=await evaluate(fx,`return window.__shot||'';`);
+  const jpg=join(OUT,'orbit-captured-page.jpg');
+  writeFileSync(jpg,Buffer.from(String(dataUrl).split(',')[1],'base64')); shots.push(jpg);
+  const dims=await evaluate(fx,`const i=new Image(); i.src=window.__shot; await i.decode(); return {w:i.naturalWidth,h:i.naturalHeight};`);
+  record('captured image decodes with real dimensions', dims?.w>100&&dims?.h>100, JSON.stringify(dims));
+}
+
+server.close(); ws.close(); child.kill('SIGTERM'); await sleep(600);
+if(!KEEP) rmSync(PROFILE,{recursive:true,force:true});
+
+const failed=results.filter(r=>!r.ok);
+console.log(`\n${results.length-failed.length}/${results.length} checks passed`);
+console.log('evidence written to '+OUT+':\n  '+shots.join('\n  '));
+process.exit(failed.length?1:0);
