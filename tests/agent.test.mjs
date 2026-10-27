@@ -99,5 +99,58 @@ test('observation lists open tabs inside the untrusted wrapper',()=>{
   assert.ok(o.indexOf('Open tabs:')<o.indexOf('</untrusted_page>'));
 });
 test('nonstream body',()=>{ const b=requestAgentBody({base:'https://api.openai.com/v1',model:'m',format:'chat',temperature:'',maxTokens:'',effort:'',search:false},[{role:'user',content:'hi'}]); assert.equal(b.stream,false); });
-test('agent body disables search',()=>{ const b=requestAgentBody({base:'https://api.openai.com/v1',model:'m',format:'responses',temperature:'',maxTokens:'',effort:'',search:true},[{role:'user',content:'hi'}]); assert.equal(b.tools,undefined); });
+
+// OpenDuet integration tests: extended tool contracts and provenance discipline.
+test('OpenDuet computer_* tools are part of the action vocabulary',()=>{
+  for(const t of ['computer_read','computer_list_files','computer_write_file','computer_request_secret','computer_request_help'])
+    assert.ok(AGENT_TOOLS.includes(t),t+' must be a recognised agent tool');
+});
+test('computer_read needs a text observation and bounds its length',()=>{
+  assert.equal(validateAgentAction({tool:'computer_read',text:'the page now says: order confirmed'}),null);
+  assert.match(validateAgentAction({tool:'computer_read'}),/needs a "text"/);
+});
+test('computer_request_help is a handover, not a question',()=>{
+  assert.equal(validateAgentAction({tool:'computer_request_help',text:'Please sign in to example.com then hand back.'}),null);
+  assert.match(describeActions([{tool:'computer_request_help',text:'sign in please'}]),/computer_request_help: sign in please/);
+});
+test('computer_request_secret needs a ref + label, not free text',()=>{
+  assert.equal(validateAgentAction({tool:'computer_request_secret',ref:'e3',text:'your one-time code'}),null);
+  assert.match(validateAgentAction({tool:'computer_request_secret',text:'code'}),/needs a "ref"/);
+  assert.match(describeActions([{tool:'computer_request_secret',ref:'e3',text:'one-time code'}]),/one-time code/);
+});
+test('computer_write_file requires a filename ref and bounded text',()=>{
+  assert.equal(validateAgentAction({tool:'computer_write_file',ref:'notes.md',text:'todo: call Jules'}),null);
+  assert.match(validateAgentAction({tool:'computer_write_file',ref:'noext',text:'x'}),/filename with an extension/);
+  assert.match(validateAgentAction({tool:'computer_write_file',text:'x'}),/filename with an extension/);
+});
+test('computer_read_file path cannot escape the workspace',()=>{
+  assert.equal(validateAgentAction({tool:'computer_read_file',ref:'notes.md'}),null);
+  assert.match(validateAgentAction({tool:'computer_read_file',ref:'../outside.txt'}),/workspace/);
+});
+test('system prompt carries OpenDuet snapshot/provenance/voice discipline',()=>{
+  const p=buildAgentSystemPrompt();
+  assert.match(p,/Never invent a ref or a snapshotId/,'snapshot provenance');
+  assert.match(p,/After any state-changing action, verify by calling computer_read/,'post-action verification');
+  assert.match(p,/never dress that up as something you looked up/,'honest provenance');
+  assert.match(p,/Voice contract: answer concisely/,'concise voice');
+  assert.match(p,/computer_request_help/,'handover tool documented');
+});test('agent body disables search',()=>{ const b=requestAgentBody({base:'https://api.openai.com/v1',model:'m',format:'responses',temperature:'',maxTokens:'',effort:'',search:true},[{role:'user',content:'hi'}]); assert.equal(b.tools,undefined); });
 test('generateOnce posts nonstream',async()=>{ const old=globalThis.fetch; let seen; globalThis.fetch=async(u,o)=>{ seen={u,o}; return new Response(JSON.stringify({choices:[{message:{content:'ok'}}]}),{headers:{'content-type':'application/json'}}); }; try{ const r=await generateOnce({base:'https://api.openai.com/v1',model:'m',format:'chat',temperature:'',maxTokens:'',effort:'',search:false},'',[{role:'user',content:'hi'}],{}); assert.equal(r.text,'ok'); assert.match(seen.o.body,/"stream":false/); }finally{ globalThis.fetch=old; } });
+test('memory_save is a real bounded tool that reaches the prompt',()=>{
+  assert.ok(AGENT_TOOLS.includes('memory_save'),'the tool must be offered');
+  assert.equal(validateAgentAction({tool:'memory_save',text:'The person prefers meetings in the morning'}),null);
+  assert.match(validateAgentAction({tool:'memory_save',text:''}),/needs a "text"/);
+  assert.match(validateAgentAction({tool:'memory_save',text:'x'.repeat(601)}),/600 characters or fewer/);
+  assert.match(validateAgentAction({tool:'memory_save',ref:'e1',text:'x'}),/takes no ref/);
+  assert.match(describeActions([{tool:'memory_save',text:'Prefers dark mode'}]),/memory_save: remember "Prefers dark mode"/);
+  const p=buildAgentSystemPrompt();
+  assert.match(p,/memory_save/,'the prompt documents the tool');
+  assert.match(p,/NEVER save secrets, credentials, card numbers/,'the prompt bounds what belongs in memory');
+  const narrowed=buildAgentSystemPrompt({tools:['snapshot','done']});
+  assert.ok(!narrowed.match(/memory_save: \{"tool"/),'a run memory_save was not offered to must not document it');
+});
+test('the voice contract carries the 35-word budget and the three-things rule',()=>{
+  const p=buildAgentSystemPrompt();
+  assert.match(p,/under about 35 words/);
+  assert.match(p,/Never list more than three things/);
+});

@@ -247,6 +247,26 @@ export async function agentAct(token,action,expectedURL){
     if(action.tool==='snapshot') return {ok:true,tool:'snapshot',detail:'re-read'};
     if(action.tool==='extract'){const data=outline();return {ok:true,tool:'extract',detail:data||'Nothing extractable found'};}
     if(action.tool==='wait'){const ms=Math.max(100,Math.min(800,Number(action.text)||300));await new Promise(r=>setTimeout(r,ms));return {ok:true,tool:'wait',detail:'waited '+ms+' ms'};}
+    // OpenDuet-era: read what the page says now (after a form submit, filter, pagination, etc.).
+    if(action.tool==='computer_read'){
+      const readText=String(action.text||'').slice(0,6000);
+      // Verify the model is citing something observable in the live page before reporting it.
+      const scan=document.body?document.body.textContent.slice(0,15000):'';
+      const cited=scan?readText.split(' ').filter(w=>w.length>6).some(w=>scan.includes(w)):true;
+      const headings=outline();
+      const data=[headings,readText].filter(Boolean).join('\n\n').slice(0,8000);
+      return {ok:!!cited,tool:'computer_read',ref:action.ref,detail:(cited?'verified: '+data:'observation not verifiable on current page — snapshot again')}+('\n'+data.slice(0,3000));
+    }
+    // The workspace and the two human-handover tools are handled in the panel
+    // (agent-run.js), not here: a workspace needs extension storage, and a masked dialog
+    // cannot exist inside the page. Reaching this means the caller routed them wrong, so
+    // say that rather than pretending the work happened.
+    if(action.tool==='computer_list_files'||action.tool==='computer_read_file'||action.tool==='computer_write_file'){
+      return {ok:false,tool:action.tool,error:'The workspace is handled in the panel, not on the page.'};
+    }
+    if(action.tool==='computer_request_help'||action.tool==='computer_request_secret'){
+      return {ok:false,tool:action.tool,error:'This needs a dialog, which the page cannot show. It is handled in the panel.'};
+    }
     if(action.tool==='scroll'&&!action.ref){
       const v=String(action.text||'').trim();
       if(v==='top')scrollTo({top:0,behavior:'instant'});
@@ -335,8 +355,42 @@ export async function agentAct(token,action,expectedURL){
     return {ok:false,error:'Unknown tool.'};
   }catch(e){ return {ok:false,tool:action.tool,ref:action.ref,error:String(e&&e.message||e).slice(0,300)}; }
 }
-export function navHistoryStep(dir){
-  if(dir==='back')history.back();
+/**
+ * Write ONE value into a field the operator loop is not allowed to fill itself.
+ *
+ * This is the only path in the extension that writes to a field the sensitive-field
+ * check refuses: a password, a one-time code, a card number. The value arrives from a
+ * masked dialog in the panel, is handed straight to the page here, and is never
+ * returned, logged, stored, or put in the model's context. The result says only
+ * whether the field took it.
+ *
+ * Everything the ordinary write path checks still applies: same document, element
+ * still connected and visible, and the page's own input/change events fire so a
+ * framework-controlled field updates rather than silently ignoring the value.
+ */
+export function secretFill(token,ref,value,expectedURL){
+  const st=globalThis.__orbitPageEdit;
+  if(!st||st.token!==token||st.url!==location.href||location.href!==expectedURL)return {error:'Page changed. Take a fresh snapshot.'};
+  const entry=st.map.get(String(ref||''));
+  if(!entry?.el?.isConnected)return {error:'Element gone. Take a fresh snapshot.'};
+  const el=entry.el;
+  if(el.disabled||el.readOnly)return {error:'Field is not editable.'};
+  if(!el.getClientRects().length)return {error:'Field is not visible; scroll it into view first.'};
+  if(typeof value!=='string'||!value)return {error:'No value was given.'};
+  if(value.length>4000)return {error:'Value is too long for one field.'};
+  try{
+    el.focus();
+    if(el.isContentEditable)el.textContent=value;
+    else{const proto=el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(proto,'value').set.call(el,value);}
+    el.dispatchEvent(new Event('input',{bubbles:true,composed:true}));
+    el.dispatchEvent(new Event('change',{bubbles:true}));
+    const written=el.isContentEditable?el.textContent:el.value;
+    // Length only: the value itself must never travel back out of the page.
+    return written===value?{ok:true,detail:'filled '+value.length+' characters'}:{error:'The site altered or rejected the value.'};
+  }catch(e){return {error:String(e&&e.message||e).slice(0,200)};}
+}
+
+export function navHistoryStep(dir){  if(dir==='back')history.back();
   else if(dir==='forward')history.forward();
   return {ok:true,dir:dir==='forward'?'forward':'back'};
 }

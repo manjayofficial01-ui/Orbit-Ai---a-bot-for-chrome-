@@ -46,6 +46,21 @@ Do not delete the extracted folder while using the unpacked extension. This pack
 - Endpoint-bound keys persisted locally so setup is not repeated, with trusted-context storage restriction, no telemetry, no Orbit backend, optional per-provider host grants, and deletion/revocation controls.
 - Text-size controls, System/Light/Dark themes, WCAG-oriented focus states, and safe DOM rendering with basic heading/code-fence formatting. Raw HTML is displayed as text; remote images and scripts are not rendered.
 
+## What 3.0 adds (OpenDuet integration)
+
+Orbit 3.0 ports the parts of the open-source [OpenDuet](OpenDuet-main) agent platform that survive
+the move from a self-hosted Docker stack to a single extension. No backend, database, or background
+worker was added. Full detail in [docs/CHANGELOG-3.0.md](docs/CHANGELOG-3.0.md).
+
+- **Snapshot provenance.** Every element ref is bound to the `snapshotId` that produced it; the model may never invent either, and a stale ref is refused with instructions to re-read rather than retry.
+- **`computer_read`.** After a form submit or any state-changing click, the operator must read the page and say what it now shows. The claim is checked against the live page text, and one the page does not support is rejected.
+- **Masked secret entry.** When a page needs one password or one code, the operator asks for it in a masked dialog. The value goes straight into the field and is never sent to the model, shown in the transcript, or saved.
+- **Hand-back pause.** For a sign-in, a phone code, or a CAPTCHA, Orbit hands control to you, waits, and re-reads the page before acting again — every ref it held is stale by then.
+- **A bounded workspace.** `computer_write_file` / `read_file` / `list_files` keep small named text files in extension storage (24 files, 20,000 chars each, 120,000 total), written only through the approval gate.
+- **Skills.** Six reusable instructions (`fill-a-form`, `extract-data`, `compare-pages`, `verify-a-claim`, `sign-in`, `navigate-and-read`) reachable from **Skills** or by typing `/slug`. A matched skill narrows the tools offered to the model, because a model picks the right tool reliably out of about ten and unreliably out of thirty. A skill adds no capability, an unmatched request keeps every tool, and every action still needs approval.
+- **Tap answers.** Reply chips under the newest answer when Orbit asks a closed question.
+- **Honest provenance and a concise voice in chat.** An answer read from a reference is cited; one from the model's own knowledge says so and is marked unverified. Ordinary answers are one to three short sentences.
+
 ## Provider presets
 | Provider | Base URL | Starting format |
 |---|---|---|

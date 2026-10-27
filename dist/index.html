@@ -16,6 +16,10 @@
     </div>
     <button id="new" class="primary wide">New conversation <kbd id="newKbd">Ctrl+K</kbd></button>
     <label class="search"><span aria-hidden="true">⌕</span><input id="filter" placeholder="Search conversations" aria-label="Search conversations"></label>
+    <section id="tasksSection" class="tasks-section" aria-label="Tasks" hidden>
+      <div class="tasks-head">Tasks</div>
+      <nav id="tasksList" aria-label="Task list"></nav>
+    </section>
     <nav id="history" aria-label="Conversation history"></nav>
     <div id="sidebarResize" role="separator" aria-orientation="vertical" aria-label="Resize conversation panel" title="Drag to expand or shrink the panel. Double-click to reset." tabindex="0"></div>
     <div class="panel-size" role="group" aria-label="Conversation panel size">
@@ -49,14 +53,18 @@
     <div id="status" role="status" aria-live="polite"></div>
     <footer>
       <div id="attachments" role="group" aria-label="Attached context"></div>
+      <div id="taskBar" class="task-bar" role="group" aria-label="Task actions" hidden></div>
       <div class="composer">
         <textarea id="prompt" rows="3" placeholder="Ask about this page, research, write, or automate…" aria-label="Message"></textarea>
         <div class="toolbar">
           <button id="agent" class="tool-strong">Act on page</button>
           <button id="reach" class="tool-strong" title="Supervised Agent Reach research; every search or read requires review">Research with Reach</button>
+          <button id="task" class="tool-strong" title="Hand this to Orbit as a task: it runs in its own conversation, this chat keeps a card, and you approve every consequential step">Task</button>
           <button id="page">Add page</button>
           <button id="screenshot">Screenshot</button>
           <button id="file">File</button>
+          <button id="skills" title="Skills: reusable instructions for a kind of work">Skills</button>
+          <button id="checkin" title="Check what's new: a read-only pass over the pages you have open and granted, suggesting next steps as cards. It never acts on its own.">What's new</button>
           <input type="file" id="fileInput" hidden accept="image/*,.txt,.md,.csv,.json,.log,.js,.ts,.py,.html,.css,.xml,.yaml,.yml,.sql,.sh">
           <select id="style" aria-label="Assistant style"><option>Balanced</option><option>Analyst</option><option>Code</option><option>Creative</option></select>
           <button id="composerToggle" title="Expand or shrink the composer">Expand</button>
@@ -96,6 +104,11 @@
     <label class="check"><input id="autoTitle" type="checkbox"> <span><strong>Smart conversation titles</strong><small>Create concise local titles from your first request.</small></span></label>
     <label>Custom instructions<textarea id="instructions" rows="4" maxlength="8000" placeholder="How Orbit should respond"></textarea></label>
     <label>Memory notes<textarea id="memory" rows="4" maxlength="8000" placeholder="Facts and preferences you explicitly want sent to this provider"></textarea></label>
+    <fieldset id="memoryLearned">
+      <legend>What Orbit has learned</legend>
+      <p class="section-note">Durable facts a supervised task saved through the approval gate. Nothing is added silently: each one was shown to you at the step it was saved, and they are sent to your provider as attributed data, never as instructions. Confirm to keep them working, or forget them.</p>
+      <div id="memoryList" aria-live="polite"></div>
+    </fieldset>
   </section>
   <section data-settings-panel="appearance" hidden>
     <fieldset><legend>Text size</legend><div id="fontChoices" class="segmented"><button type="button" data-font="small">Small</button><button type="button" data-font="medium">Medium</button><button type="button" data-font="large">Large</button><button type="button" data-font="xlarge">Extra large</button></div></fieldset>

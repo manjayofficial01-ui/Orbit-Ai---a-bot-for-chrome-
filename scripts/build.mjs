@@ -3,7 +3,7 @@ import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 
 const root=fileURLToPath(new URL('../',import.meta.url));
-const scripts=['app.js','core.js','page-access.js','agent.js','agent-run.js','background.js','reach-core.js','reach-client.js','research-protocol.js','research-loop.js','ocr.js'];
+const scripts=['app.js','core.js','page-access.js','agent.js','agent-run.js','skills.js','memory.js','tasks.js','checkin.js','background.js','reach-core.js','reach-client.js','research-protocol.js','research-loop.js','ocr.js'];
 await mkdir(path.join(root,'dist','native-host'),{recursive:true});
 for(const file of scripts)await copyFile(path.join(root,'src',file),path.join(root,'dist',file));
 await copyFile(path.join(root,'src','manifest.json'),path.join(root,'dist','manifest.json'));

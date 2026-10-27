@@ -133,7 +133,7 @@ test('active-tab context is automatic, not keyword-gated',()=>{
 });
 
 test('navigation tools are grant-gated and end their step',()=>{
-  assert.match(agentRun,/const endsStep=r\.ok&&\(a\.tool==='goto'\|\|a\.tool==='nav-history'\|\|\(a\.tool==='read-tab'&&r\.detail!=='already reading this tab'\)\);/,
+  assert.match(agentRun,/const endsStep=r\.ok&&\(a\.tool==='goto'\|\|a\.tool==='nav-history'\|\|\(a\.tool==='read-tab'&&r\.detail!=='already reading this tab'\)(?:\|\|\(a\.tool==='computer_read'&&r\.ok\))?\);/,
     'goto and nav-history must end the step exactly like read-tab');
   assert.match(agentRun,/const navigated=results\.some\(r=>r\.ok&&\(r\.tool==='goto'\|\|r\.tool==='nav-history'\|\|\(r\.tool==='read-tab'&&r\.detail!=='already reading this tab'\)\)\)/);
   const gotoFn=/const gotoUrl=async\(raw\)=>\{[\s\S]*?\n  \};/.exec(agentRun)?.[0]||'';
@@ -167,6 +167,6 @@ test('all-sites access stays optional and requestable for captures only',()=>{
 test('creating the first chat never discards the message attachments',()=>{
   assert.match(app,/async function ensureChat\(\)\{let chat=current\(\);if\(chat\)return chat;const keep=structuredClone\(pending\);await newChat\(\);chat=current\(\);pending=keep;renderAttachments\(\);return chat;\}/,
     'ensureChat must snapshot pending before newChat and restore it after');
-  assert.equal([...app.matchAll(/await ensureChat\(\)/g)].length,3,'chat, agent and research must all use it');
+  assert.equal([...app.matchAll(/await ensureChat\(\)/g)].length,5,'chat, agent, research, tasks and check-in must all use it');
   assert.doesNotMatch(app,/if\(!chat\)\{await newChat\(\);chat=current\(\);\}/,'no path may auto-create a chat while dropping pending references');
 });

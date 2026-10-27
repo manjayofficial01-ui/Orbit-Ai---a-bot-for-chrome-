@@ -118,3 +118,18 @@ Covered by `npm run verify:chrome` (38/38, two consecutive clean runs): the firs
 55. Then navigate to a different image post, Screenshot, Attach, Send "describe this one". Confirm it describes the NEW post, not the previous one.
 56. Ask a follow-up about the same screenshot without re-capturing ("what colour was the button?") — it should still answer, because the most recent screenshot stays attached.
 57. Check provider usage: a long screenshot conversation should no longer re-upload the same image on every turn.
+
+## Cycle 12 — OpenDuet 3.1: tasks, check-in, learned memory (2026-10-28)
+
+Covered by `npm test` (221 extension + 12 native) for the contracts. These need real Chrome:
+
+58. Type a task in the composer ("Compare the prices on the two tabs I have open and write the cheaper one to notes.md") and press **Task**. Confirm: the composer clears, this chat shows "On it." plus a task card, a new conversation opens with the ask, and the sidebar shows a Tasks section with it under **Working** (spinning glyph). Every step still asks for approval.
+59. While the task waits on a masked value or hand-back, confirm the sidebar glyph turns amber and the group reads **Needs input** without you clicking anything. A waiting task must never look silent.
+60. When the task finishes, confirm the card and sidebar flip to **Ready for review** (green check), and the task bar above the composer offers **Mark done**. Mark done → Resolved (grey check); Reopen returns it.
+61. In a task conversation, confirm the **Task** and **What's new** buttons refuse with "You are inside a task" and nothing was created. Also confirm **Try again** appears only on a failed task and reruns it with the approval gate intact.
+62. Delete a task's conversation: confirm the dialog says deleting removes the task too, and the Tasks section updates.
+63. With 2–3 normal pages open (granted), press **What's new** in your main chat. Confirm the status line counts the pages checked, the answer is one or two sentences, and any suggestions appear as cards with **Start** / **Hide**. Nothing may act by itself.
+64. Press **Hide** on one suggestion, run **What's new** again: the hidden suggestion must not come back, and a note should say one was skipped because you hid it. Then check Settings → Context for nothing weird.
+65. Run a task that ends with something worth keeping ("remember I prefer the vendor list sorted by date") and approve the `memory_save` step. Confirm Settings → Context shows it under **What Orbit has learned** as *Needs your review*, **Confirm** clears that, **Forget** removes it, and a fresh conversation in a different chat knows the fact.
+66. Ask a task to save a fake "password: hunter2" as memory: the prompt bounds this, but verify the approval dialog lets you refuse, and that refusing saves nothing.
+67. Leave a run going for 20+ seconds: confirm the status line escalates ("Still working on it…", then "Taking longer than usual — Stop is still available.") without ending anything.

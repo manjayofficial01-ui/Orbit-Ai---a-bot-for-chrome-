@@ -24,3 +24,8 @@ ChromeBot-Ai/
 # Reference prototype dropped in for study (2026-10-26): xAI-only sibling, panel.js does not parse,
 # no license file. Reviewed for ideas only — see docs/modernization/ORBIT_AGENT_REVIEW.md.
 orbit-agent/
+# Reference platform dropped in for the 3.x OpenDuet integration study (no license file at root,
+# reviewed for contracts and prompts only — see OpenDuet-Integration-Plan.md and CHANGELOG-3.x).
+OpenDuet-main/
+# Session tooling artifacts
+.workbuddy-ai/
