@@ -55,10 +55,25 @@ test('the skills menu is built with DOM nodes, never innerHTML',()=>{
   assert.doesNotMatch(app,/openSkillsMenu[\s\S]{0,900}innerHTML/,'the menu must not use innerHTML');
 });
 
-test('the skills button exists in the composer and is disabled while busy',()=>{
-  assert.match(html,/id="skills"/,'the composer needs a skills control');
-  assert.match(html,/<button id="skills"[^>]*>Skills<\/button>/,'the control needs a visible name');
-  assert.match(app,/'reach','file','skills','checkin','task','settings'/,'the control must be disabled during a run');
+test('the composer is one row: a + attach menu and an Agent split, disabled while busy',()=>{
+  assert.match(html,/id="attach" class="icon composer-icon"/,'the + control exists');
+  assert.match(html,/aria-label="Attach a page, screenshot, file, or pick a skill"/,'the + control is named');
+  assert.match(html,/<button id="agent" class="agent-main"[^>]*>Agent<\/button>/,'the agent control keeps a visible name');
+  assert.match(html,/id="agentMode"/,'the agent mode caret exists');
+  assert.doesNotMatch(html,/class="toolbar"/,'the two-row toolbar is gone');
+  assert.equal([...html.matchAll(/class="composer-row"/g)].length,1,'exactly one composer row');
+  assert.match(app,/'regenerate','export','attach','agent','agentMode','checkin','settings','expand','float'/,'every composer control is disabled during a run');
+});
+
+test('the removed buttons live in the two menus with their old handlers',()=>{
+  assert.match(app,/function openAttachMenu\(\)/,'the + menu');
+  assert.match(app,/label:'Add page…',sub:'[^']+',onclick:safe\(\(\)=>openPageTools\(showPreview\)\)/);
+  assert.match(app,/label:'Screenshot',sub:'[^']+',onclick:safe\(async\(\)=>showPreview\(await captureActiveScreenshot\(\)\)\)/);
+  assert.match(app,/label:'Attach file',sub:'[^']+',onclick:\(\)=>\$\('fileInput'\)\.click\(\)/);
+  assert.match(app,/function openAgentModeMenu\(\)/,'the agent mode menu');
+  assert.match(app,/label:'Act on this page',sub:'[^']+',onclick:safe\(runAgent\)/);
+  assert.match(app,/label:'Research with Reach',sub:'[^']+',disabled:!hasText,onclick:safe\(runResearch\)/,'research needs text');
+  assert.match(app,/label:'Start as task',sub:'[^']+',disabled:!hasText,onclick:safe\(startTaskFromPrompt\)/,'tasks need text');
 });
 
 test('the new surfaces are styled in both themes',()=>{
@@ -137,11 +152,10 @@ test('the unimplemented demonstration tool is not advertised',async()=>{
 // ---------------------------------------------------------------------------
 
 test('the task, check-in and task-bar controls exist and are disabled while busy',()=>{
-  assert.match(html,/<button id="task"[^>]*>Task<\/button>/,'the composer needs a Task control');
-  assert.match(html,/<button id="checkin"[^>]*>What's new<\/button>/,'the composer needs the check-in control');
-  assert.match(app,/'skills','checkin','task','settings'/,'both controls must be disabled during a run');
+  assert.match(html,/<button id="checkin" class="wide secondary"[^>]*>What's new\?<\/button>/,'the check-in lives in the sidebar, at workspace level');
   assert.match(html,/id="tasksSection"/);
   assert.match(html,/id="taskBar"/);
+  assert.match(app,/'attach','agent','agentMode','checkin'/,'the check-in is disabled during a run');
 });
 
 test('a task is a conversation of its own, opened with the task frame',()=>{

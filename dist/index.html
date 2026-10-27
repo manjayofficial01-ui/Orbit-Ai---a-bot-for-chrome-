@@ -15,6 +15,7 @@
       <button id="closeNav" class="icon" aria-label="Close conversation list">×</button>
     </div>
     <button id="new" class="primary wide">New conversation <kbd id="newKbd">Ctrl+K</kbd></button>
+    <button id="checkin" class="wide secondary" title="Check what's new: a read-only pass over the pages you have open and granted, suggesting next steps as cards. It never acts on its own.">What's new?</button>
     <label class="search"><span aria-hidden="true">⌕</span><input id="filter" placeholder="Search conversations" aria-label="Search conversations"></label>
     <section id="tasksSection" class="tasks-section" aria-label="Tasks" hidden>
       <div class="tasks-head">Tasks</div>
@@ -41,6 +42,8 @@
       <div class="header-actions">
         <button id="textSmaller" class="icon text-control" aria-label="Decrease text size" title="Decrease text">A−</button>
         <button id="textLarger" class="icon text-control" aria-label="Increase text size" title="Increase text">A+</button>
+        <button id="regenerate" class="icon" aria-label="Regenerate the last answer" title="Regenerate the last answer">↻</button>
+        <button id="export" class="icon" aria-label="Export conversation as Markdown" title="Export as Markdown">⤓</button>
         <button id="theme" class="icon" aria-label="Toggle color theme" title="Theme">◐</button>
         <button id="winShrink" class="icon win-resize" aria-label="Shrink floatable window" title="Shrink floatable window">−</button>
         <button id="winGrow" class="icon win-resize" aria-label="Expand floatable window" title="Expand floatable window">+</button>
@@ -55,23 +58,18 @@
       <div id="attachments" role="group" aria-label="Attached context"></div>
       <div id="taskBar" class="task-bar" role="group" aria-label="Task actions" hidden></div>
       <div class="composer">
-        <textarea id="prompt" rows="3" placeholder="Ask about this page, research, write, or automate…" aria-label="Message"></textarea>
-        <div class="toolbar">
-          <button id="agent" class="tool-strong">Act on page</button>
-          <button id="reach" class="tool-strong" title="Supervised Agent Reach research; every search or read requires review">Research with Reach</button>
-          <button id="task" class="tool-strong" title="Hand this to Orbit as a task: it runs in its own conversation, this chat keeps a card, and you approve every consequential step">Task</button>
-          <button id="page">Add page</button>
-          <button id="screenshot">Screenshot</button>
-          <button id="file">File</button>
-          <button id="skills" title="Skills: reusable instructions for a kind of work">Skills</button>
-          <button id="checkin" title="Check what's new: a read-only pass over the pages you have open and granted, suggesting next steps as cards. It never acts on its own.">What's new</button>
-          <input type="file" id="fileInput" hidden accept="image/*,.txt,.md,.csv,.json,.log,.js,.ts,.py,.html,.css,.xml,.yaml,.yml,.sql,.sh">
-          <select id="style" aria-label="Assistant style"><option>Balanced</option><option>Analyst</option><option>Code</option><option>Creative</option></select>
-          <button id="composerToggle" title="Expand or shrink the composer">Expand</button>
-          <span class="spacer"></span><button id="stop" hidden>Stop</button><button id="send" class="primary">Send <span aria-hidden="true">↑</span></button>
+        <div class="composer-row">
+          <button id="attach" class="icon composer-icon" aria-label="Attach a page, screenshot, file, or pick a skill" aria-haspopup="menu" title="Attach page · Screenshot · File · Skills">+</button>
+          <textarea id="prompt" rows="1" placeholder="Ask about this page, research, write, or automate…" aria-label="Message"></textarea>
+          <span class="agent-split" role="group" aria-label="Agent modes">
+            <button id="agent" class="agent-main" title="Run Orbit's supervised agent on the live page: it proposes steps, you approve each one">Agent</button>
+            <button id="agentMode" class="icon agent-caret" aria-label="Other ways to run this: Research with Reach, or start a Task" aria-haspopup="menu" title="Research with Reach · Start as task">▾</button>
+          </span>
+          <button id="send" class="primary composer-send" aria-label="Send message" title="Send (Enter)">↑</button>
+          <button id="stop" class="composer-send stop-btn" hidden>Stop</button>
         </div>
+        <input type="file" id="fileInput" hidden accept="image/*,.txt,.md,.csv,.json,.log,.js,.ts,.py,.html,.css,.xml,.yaml,.yml,.sql,.sh">
       </div>
-      <div class="footer-meta"><span>Page context is opt-in. Review before sending.</span><div class="chat-actions"><button id="regenerate">Regenerate</button><button id="export">Export</button><button id="delete">Delete</button></div></div>
     </footer>
   </main>
 </div>
@@ -102,6 +100,8 @@
     <label class="check"><input id="smartContext" type="checkbox"> <span><strong>Smart page context</strong><small>Attach a fresh, privacy-filtered snapshot of the active tab to every message automatically — until you attach something else or turn this off. Chrome asks once per site for access.</small></span></label>
     <label>Context depth<select id="contextDepth"><option value="focused">Focused · selection or visible essentials</option><option value="balanced">Balanced · main page text</option><option value="deep">Deep · larger page snapshot</option></select></label>
     <label class="check"><input id="autoTitle" type="checkbox"> <span><strong>Smart conversation titles</strong><small>Create concise local titles from your first request.</small></span></label>
+    <label>Assistant style<select id="style" aria-label="Assistant style"><option>Balanced</option><option>Analyst</option><option>Code</option><option>Creative</option></select><small>Shapes how Orbit answers. Saved with your settings.</small></label>
+    <p class="section-note">Page context is opt-in and only sent when you submit a message. Agent and research runs propose steps; every consequential step waits for your approval.</p>
     <label>Custom instructions<textarea id="instructions" rows="4" maxlength="8000" placeholder="How Orbit should respond"></textarea></label>
     <label>Memory notes<textarea id="memory" rows="4" maxlength="8000" placeholder="Facts and preferences you explicitly want sent to this provider"></textarea></label>
     <fieldset id="memoryLearned">

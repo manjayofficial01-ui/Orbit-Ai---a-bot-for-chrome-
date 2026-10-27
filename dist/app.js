@@ -18,7 +18,7 @@ const defaults={base:presets.openai,model:'',format:'chat',temperature:'',maxTok
 const fields=['base','model','format','temperature','maxTokens','tokenField','effort','search','xsearch','code','instructions','memory','saveHistory','smartContext','contextDepth','autoTitle'];
 let state={chats:[],current:'',provider:'openai',profiles:{},theme:'system',fontSize:'medium',recentChats:[],recentIndex:-1,tasks:[],checkin:{lastRunAt:0,hidden:[],suggestions:[]}},keys={},modelCache={},busy=false,controller,ownsWorkspace=false,releaseLock,pending=[],preview,selectionId,saveQueue=Promise.resolve(),storageWritable=true;
 let memoriesCache=[];
-let ui={navHidden:false,sidebarWidth:272,composerExpanded:false};
+let ui={navHidden:false,sidebarWidth:272};
 const config=()=>({...defaults,...state.profiles[state.provider]});
 const current=()=>state.chats.find(x=>x.id===state.current);
 const isLoopback=base=>['localhost','127.0.0.1'].includes(new URL(base).hostname);
@@ -192,7 +192,7 @@ async function createAndRunTask({ask,title,origin}){
   chat.messages.push({role:'user',content:body,taskFrame:true});
   parent.messages.push({role:'user',content:body});
   parent.messages.push({role:'assistant',content:'On it.',state:'complete',taskCard:{taskId:task.id,title:name}});
-  if(origin==='asked'){$('prompt').value='';pending=[];renderAttachments();}
+  if(origin==='asked'){$('prompt').value='';growPrompt();pending=[];renderAttachments();}
   await save();
   await runTask(task,cred);
   return task;
@@ -343,7 +343,7 @@ function renderMessages(){const box=$('messages'),chat=current();box.replaceChil
 function renderAttachments(){$('attachments').replaceChildren();pending.forEach((x,i)=>{const b=element('button',(x.kind==='screenshot'?'Screenshot: ':'')+x.title+' ×');b.title='Remove reference';b.onclick=()=>{pending.splice(i,1);renderAttachments();};$('attachments').append(b);});}
 function render(){renderHistory();renderMessages();renderTaskBar();renderAttachments();connection();updateNavigation();}
 async function deleteMessage(index){if(busy)throw Error('Stop the current answer before deleting messages.');const chat=current();if(!chat||!ownsWorkspace)return;if(!Number.isInteger(index)||index<0||index>=chat.messages.length)return;const target=chat.messages[index];if(!confirm(`Delete this ${target.role==='assistant'?'Orbit answer':'message'}? It is removed from this device only.`))return;chat.messages.splice(index,1);renderMessages();await save();}
-function controls(){for(const id of ['new','regenerate','delete','page','screenshot','agent','reach','file','skills','checkin','task','settings','expand','float'])if($(id))$(id).disabled=busy;$('send').disabled=busy;$('stop').hidden=!busy;renderHistory();renderTasks();}
+function controls(){for(const id of ['new','regenerate','export','attach','agent','agentMode','checkin','settings','expand','float'])if($(id))$(id).disabled=busy;$('send').disabled=busy;$('stop').hidden=!busy;renderHistory();renderTasks();}
 function referenceText(ref){if(ref.kind==='screenshot')return `\n\n<user_screenshot>\nTitle: ${ref.title}\nURL: ${ref.url||''}\nImage data URL: ${ref.dataUrl}\n</user_screenshot>`;return `\n\n<untrusted_reference>\nTitle: ${ref.title}\nURL: ${ref.url||''}\n${ref.text}\n</untrusted_reference>`;}
 // OpenDuet's PROVENANCE_GUIDANCE and its chat-voice contract, adapted to Orbit. Both are here
 // rather than in a skill because they apply to every turn: a confident unsourced answer about a
@@ -356,7 +356,7 @@ return imageUserMessage(text,images.map(r=>r.dataUrl),cfg.format);});return [sys
 async function maybeSmartContext(){const cfg=config();if(!cfg.smartContext||pending.length)return;try{const active=(await chrome.tabs.query({active:true,lastFocusedWindow:true}))[0];if(!active?.url||active.url===location.href)return;}catch{return;}status('Reading the active page…');try{const ref=await quickPageReference(cfg.contextDepth);pending.push(ref);renderAttachments();status('Attached fresh context from '+ref.title+'.');}catch(e){status('Page context unavailable: '+e.message);}}
 // Creating the first chat must not eat the attachments the user already made for this message.
 async function ensureChat(){let chat=current();if(chat)return chat;const keep=structuredClone(pending);await newChat();chat=current();pending=keep;renderAttachments();return chat;}
-async function send(regenerate=false){if(busy||!ownsWorkspace)return;const cfg=config();cfg.base=normalizeBase(cfg.base);if(!cfg.model)throw Error('Open Settings and choose a model.');if(!await chrome.permissions.contains({origins:[hostPattern(cfg.base)]}))throw Error('Open Settings and grant provider access.');const key=keyFor(cfg.base);if(!key&&!isLoopback(cfg.base))throw Error('Open Settings and save your API key once.');let chat=await ensureChat();let user;if(regenerate){if(chat.messages.at(-1)?.role!=='assistant')throw Error('There is no answer to regenerate.');}else{const text=$('prompt').value.trim();if(!text)return;await maybeSmartContext();user={role:'user',content:text,refs:structuredClone(pending)};chat.messages.push(user);}let messages;try{messages=buildMessages(regenerate?{...chat,messages:chat.messages.slice(0,-1)}:chat);requestBody(cfg,messages);}catch(e){if(user)chat.messages.pop();throw e;}if(regenerate)chat.messages.pop();else{$('prompt').value='';pending=[];if(chat.title==='New conversation'&&cfg.autoTitle)chat.title=(parseSlashCommand(user.content)?.rest||user.content).replace(/^\W+/,'').slice(0,58)||'New conversation';}const answer={role:'assistant',content:'',state:'streaming',sources:[]};chat.messages.push(answer);busy=true;controller=new AbortController();controls();render();status('Connecting…');const clearPresence=presenceWatch();let lastCheckpoint=0,lastPaint=0;const timer=setTimeout(()=>controller.abort(),300000);try{await save();await generate(cfg,key,messages,{signal:controller.signal,onText:delta=>{answer.content+=delta;if(answer.content.length>250000){controller.abort();throw Error('Output reached the size cap.');}const now=Date.now();if(now-lastPaint>75){renderMessages();$('messages').scrollTop=$('messages').scrollHeight;lastPaint=now;}if(now-lastCheckpoint>1500){lastCheckpoint=now;save().catch(e=>status('Checkpoint failed: '+e.message));}status('Generating…');},onSources:items=>{for(const s of items)if(!answer.sources.some(x=>x.url===s.url))answer.sources.push(s);},onUsage:usage=>{if(usage)answer.usage=usage;},onSearch:phase=>status('Provider web search: '+phase)});answer.state='complete';status('Done.');}catch(e){answer.state=controller.signal.aborted?'interrupted':'failed';status(controller.signal.aborted?'Stopped or timed out. Partial output retained.':e.message);}finally{clearTimeout(timer);clearPresence();busy=false;controller=null;controls();renderMessages();await save();}}
+async function send(regenerate=false){if(busy||!ownsWorkspace)return;const cfg=config();cfg.base=normalizeBase(cfg.base);if(!cfg.model)throw Error('Open Settings and choose a model.');if(!await chrome.permissions.contains({origins:[hostPattern(cfg.base)]}))throw Error('Open Settings and grant provider access.');const key=keyFor(cfg.base);if(!key&&!isLoopback(cfg.base))throw Error('Open Settings and save your API key once.');let chat=await ensureChat();let user;if(regenerate){if(chat.messages.at(-1)?.role!=='assistant')throw Error('There is no answer to regenerate.');}else{const text=$('prompt').value.trim();if(!text)return;await maybeSmartContext();user={role:'user',content:text,refs:structuredClone(pending)};chat.messages.push(user);}let messages;try{messages=buildMessages(regenerate?{...chat,messages:chat.messages.slice(0,-1)}:chat);requestBody(cfg,messages);}catch(e){if(user)chat.messages.pop();throw e;}if(regenerate)chat.messages.pop();else{$('prompt').value='';growPrompt();pending=[];if(chat.title==='New conversation'&&cfg.autoTitle)chat.title=(parseSlashCommand(user.content)?.rest||user.content).replace(/^\W+/,'').slice(0,58)||'New conversation';}const answer={role:'assistant',content:'',state:'streaming',sources:[]};chat.messages.push(answer);busy=true;controller=new AbortController();controls();render();status('Connecting…');const clearPresence=presenceWatch();let lastCheckpoint=0,lastPaint=0;const timer=setTimeout(()=>controller.abort(),300000);try{await save();await generate(cfg,key,messages,{signal:controller.signal,onText:delta=>{answer.content+=delta;if(answer.content.length>250000){controller.abort();throw Error('Output reached the size cap.');}const now=Date.now();if(now-lastPaint>75){renderMessages();$('messages').scrollTop=$('messages').scrollHeight;lastPaint=now;}if(now-lastCheckpoint>1500){lastCheckpoint=now;save().catch(e=>status('Checkpoint failed: '+e.message));}status('Generating…');},onSources:items=>{for(const s of items)if(!answer.sources.some(x=>x.url===s.url))answer.sources.push(s);},onUsage:usage=>{if(usage)answer.usage=usage;},onSearch:phase=>status('Provider web search: '+phase)});answer.state='complete';status('Done.');}catch(e){answer.state=controller.signal.aborted?'interrupted':'failed';status(controller.signal.aborted?'Stopped or timed out. Partial output retained.':e.message);}finally{clearTimeout(timer);clearPresence();busy=false;controller=null;controls();renderMessages();await save();}}
 function explainProbeFailure(message,format){
  const status=Number(/Provider HTTP (\d{3})/.exec(message)?.[1]||0);
  if(status===401||status===403)return `The provider refused this request (HTTP ${status}). Your key may be missing, expired, unpaid, or not permitted for that model. This is separate from the model list, which can fail for other reasons.`;
@@ -487,7 +487,7 @@ async function runResearch(){
   chat.messages.push(user);
   let messages;
   try{messages=buildMessages(chat).filter(m=>m.role!=='system');requestBody(cfg,messages);}catch(error){chat.messages.pop();throw error;}
-  $('prompt').value='';pending=[];
+  $('prompt').value='';growPrompt();pending=[];
   if(chat.title==='New conversation')chat.title=('Research: '+goal).slice(0,58);
   const answer={role:'assistant',content:'',state:'streaming',sources:[],activity:[],researchCalls:0};
   chat.messages.push(answer);busy=true;controller=new AbortController();controls();render();
@@ -525,13 +525,58 @@ async function runResearch(){
   }
 }
 
-async function runAgent(){if(busy||!ownsWorkspace)return;const cfg=config();cfg.base=normalizeBase(cfg.base);if(!cfg.model)throw Error('Open Settings and choose a model.');if(!await chrome.permissions.contains({origins:[hostPattern(cfg.base)]}))throw Error('Grant provider access in Settings.');const key=keyFor(cfg.base);if(!key&&!isLoopback(cfg.base))throw Error('Save your API key in Settings.');let chat=await ensureChat();const goal=$('prompt').value.trim()||'Read the active webpage and explain what you can do there.',user={role:'user',content:'[agent] '+goal,refs:structuredClone(pending)};chat.messages.push(user);try{requestBody(cfg,buildMessages(chat));}catch(e){chat.messages.pop();throw e;}$('prompt').value='';pending=[];if(chat.title==='New conversation')chat.title=goal.slice(0,58);const answer={role:'assistant',content:'',state:'streaming',sources:[]};chat.messages.push(answer);busy=true;controller=new AbortController();controls();render();const clearPresenceAgent=presenceWatch();const say=line=>{answer.content+=(answer.content?'\n':'')+line;renderMessages();$('messages').scrollTop=$('messages').scrollHeight;};try{await save();say('Agent started. You can stop at any time; consequential actions require review.');const res=await runAgentLoop({cfg,key,goal,onEvent:e=>{const line=`[${e.type} · step ${e.step}] ${String(e.text||'').slice(0,800)}`;say(line);status(line.slice(0,200));},signal:controller.signal});for(const line of res.transcript||[])say(line);if(res.hitLimit)say('Step limit reached. Ask a narrower follow-up to continue.');if(res.cancelled)say('Stopped at your request.');answer.state='complete';status('Agent done.');}catch(e){answer.state=controller?.signal.aborted?'interrupted':'failed';say('Agent error: '+e.message);status(controller?.signal.aborted?'Stopped. Partial output retained.':e.message);}finally{clearPresenceAgent();busy=false;controller=null;controls();renderMessages();await save();}}
-$('page').onclick=safe(()=>openPageTools(showPreview));$('screenshot').onclick=safe(async()=>showPreview(await captureActiveScreenshot()));$('agent').onclick=safe(runAgent);$('reach').onclick=safe(runResearch);$('task').onclick=safe(startTaskFromPrompt);$('checkin').onclick=safe(runCheckin);
+async function runAgent(){if(busy||!ownsWorkspace)return;const cfg=config();cfg.base=normalizeBase(cfg.base);if(!cfg.model)throw Error('Open Settings and choose a model.');if(!await chrome.permissions.contains({origins:[hostPattern(cfg.base)]}))throw Error('Grant provider access in Settings.');const key=keyFor(cfg.base);if(!key&&!isLoopback(cfg.base))throw Error('Save your API key in Settings.');let chat=await ensureChat();const goal=$('prompt').value.trim()||'Read the active webpage and explain what you can do there.',user={role:'user',content:'[agent] '+goal,refs:structuredClone(pending)};chat.messages.push(user);try{requestBody(cfg,buildMessages(chat));}catch(e){chat.messages.pop();throw e;}$('prompt').value='';growPrompt();pending=[];if(chat.title==='New conversation')chat.title=goal.slice(0,58);const answer={role:'assistant',content:'',state:'streaming',sources:[]};chat.messages.push(answer);busy=true;controller=new AbortController();controls();render();const clearPresenceAgent=presenceWatch();const say=line=>{answer.content+=(answer.content?'\n':'')+line;renderMessages();$('messages').scrollTop=$('messages').scrollHeight;};try{await save();say('Agent started. You can stop at any time; consequential actions require review.');const res=await runAgentLoop({cfg,key,goal,onEvent:e=>{const line=`[${e.type} · step ${e.step}] ${String(e.text||'').slice(0,800)}`;say(line);status(line.slice(0,200));},signal:controller.signal});for(const line of res.transcript||[])say(line);if(res.hitLimit)say('Step limit reached. Ask a narrower follow-up to continue.');if(res.cancelled)say('Stopped at your request.');answer.state='complete';status('Agent done.');}catch(e){answer.state=controller?.signal.aborted?'interrupted':'failed';say('Agent error: '+e.message);status(controller?.signal.aborted?'Stopped. Partial output retained.':e.message);}finally{clearPresenceAgent();busy=false;controller=null;controls();renderMessages();await save();}}
+$('attach').onclick=safe(()=>{if(document.querySelector('.composer-menu')){closeComposerMenus();return;}openAttachMenu();});
+$('agentMode').onclick=safe(()=>{if(document.querySelector('.composer-menu')){closeComposerMenus();return;}openAgentModeMenu();});
+$('agent').onclick=safe(runAgent);$('checkin').onclick=safe(runCheckin);
+// ---------------------------------------------------------------------------
+// Composer menus. One "+" button opens everything that attaches context (page,
+// screenshot, file, skills); the Agent button's caret picks how a run executes
+// (agent now, Reach research, or a task). The menus are fixed-position bubbles
+// anchored above the button that opened them, so they work in the panel, the
+// float window and narrow widths alike.
+// ---------------------------------------------------------------------------
+function closeComposerMenus(){document.querySelectorAll('.composer-menu,.skills-menu').forEach(m=>m.remove());}
+function composerMenu(anchor){
+  closeComposerMenus();
+  const menu=element('div',undefined,'composer-menu');
+  menu.setAttribute('role','menu');
+  document.body.append(menu);
+  const r=anchor.getBoundingClientRect(),w=menu.offsetWidth||280;
+  menu.style.left=Math.max(8,Math.min(r.left,window.innerWidth-w-8))+'px';
+  menu.style.bottom=(window.innerHeight-r.top+6)+'px';
+  const dismiss=e=>{if(!menu.contains(e.target)&&!anchor.contains(e.target)){closeComposerMenus();document.removeEventListener('pointerdown',dismiss);}};
+  document.addEventListener('pointerdown',dismiss);
+  return menu;
+}
+function menuItem(menu,{label,sub,disabled,onclick}){
+  const b=element('button',undefined,'composer-menu-item');
+  b.type='button';b.setAttribute('role','menuitem');b.disabled=!!disabled;
+  b.append(element('strong',label));
+  if(sub)b.append(element('span',sub));
+  if(onclick)b.onclick=()=>{closeComposerMenus();onclick();};
+  menu.append(b);return b;
+}
+function openAttachMenu(){
+  const menu=composerMenu($('attach'));
+  menuItem(menu,{label:'Add page…',sub:'Read the page, fetch a URL by address, or digest all tabs',onclick:safe(()=>openPageTools(showPreview))});
+  menuItem(menu,{label:'Screenshot',sub:'Capture the visible tab and review before attaching',onclick:safe(async()=>showPreview(await captureActiveScreenshot()))});
+  menuItem(menu,{label:'Attach file',sub:'An image (read to text) or a plain-text file',onclick:()=>$('fileInput').click()});
+  menuItem(menu,{label:'Skills…',sub:'Reusable /commands for a kind of work',onclick:()=>openSkillsMenu()});
+}
+function openAgentModeMenu(){
+  const hasText=!!$('prompt').value.trim();
+  const menu=composerMenu($('agentMode'));
+  menuItem(menu,{label:'Act on this page',sub:'The supervised agent works step by step on the live tab',onclick:safe(runAgent)});
+  menuItem(menu,{label:'Research with Reach',sub:'Bounded web research; every search or read needs your OK',disabled:!hasText,onclick:safe(runResearch)});
+  menuItem(menu,{label:'Start as task',sub:'Runs in its own conversation; this chat keeps a card',disabled:!hasText,onclick:safe(startTaskFromPrompt)});
+  if(!hasText)menu.append(element('p','Research and tasks need something to do — type it first. Acting on the page works without text.','skills-menu-hint'));
+}
 // The skills menu. A skill is a named instruction anybody can invoke with `/`: it adds no
 // capability, and it can only ask for tools the extension already has. Picking one here writes the
 // command into the composer so the person still sees and can edit what will be sent.
 function openSkillsMenu(){
-  document.querySelector('.skills-menu')?.remove();
+  closeComposerMenus();
   const menu=element('div',undefined,'skills-menu');
   menu.setAttribute('role','menu');menu.setAttribute('aria-label','Skills');
   const head=element('div','Skills','skills-menu-head');menu.append(head);
@@ -540,16 +585,23 @@ function openSkillsMenu(){
     const b=element('button',undefined,'skills-menu-item');
     b.setAttribute('role','menuitem');b.type='button';
     b.append(element('strong',skill.title),element('span',skill.summary));
-    b.onclick=()=>{ $('prompt').value=`/${skill.slug} `; menu.remove(); $('prompt').focus(); };
+    b.onclick=()=>{ $('prompt').value=`/${skill.slug} `; menu.remove(); growPrompt(); $('prompt').focus(); };
     menu.append(b);
   }
   const close=element('button','Close','skills-menu-close');close.onclick=()=>menu.remove();menu.append(close);
-  $('skills').after(menu);
-  const dismiss=e=>{if(!menu.contains(e.target)&&e.target!==$('skills')){menu.remove();document.removeEventListener('pointerdown',dismiss);}};
+  document.body.append(menu);
+  const r=$('attach').getBoundingClientRect();
+  menu.style.left=Math.max(8,Math.min(r.left,window.innerWidth-(menu.offsetWidth||340)-8))+'px';
+  menu.style.bottom=(window.innerHeight-r.top+6)+'px';
+  const dismiss=e=>{if(!menu.contains(e.target)&&!$('attach').contains(e.target)){menu.remove();document.removeEventListener('pointerdown',dismiss);}};
   document.addEventListener('pointerdown',dismiss);
 }
-$('skills').onclick=safe(()=>{const open=document.querySelector('.skills-menu');if(open){open.remove();return;}openSkillsMenu();});
-$('file').onclick=()=>$('fileInput').click();$('fileInput').onchange=safe(async()=>{const f=$('fileInput').files[0];$('fileInput').value='';if(!f)return;
+// Prompt auto-grow: the composer starts one row tall and grows with the draft.
+function growPrompt(){const p=$('prompt');p.style.height='auto';p.style.height=Math.min(p.scrollHeight,180)+'px';}
+$('prompt').addEventListener('input',growPrompt);
+$('style').onchange=safe(async()=>{state.style=$('style').value;await save();});
+$('send').onclick=safe(()=>send());$('stop').onclick=()=>controller?.abort();$('regenerate').onclick=safe(()=>send(true));$('new').onclick=safe(newChat);$('filter').oninput=renderHistory;$('back').onclick=safe(()=>moveHistory(-1));$('forward').onclick=safe(()=>moveHistory(1));
+$('fileInput').onchange=safe(async()=>{const f=$('fileInput').files[0];$('fileInput').value='';if(!f)return;
  if(/^image\//.test(f.type)||/\.(png|jpe?g|webp|gif|bmp)$/i.test(f.name)){
    if(f.size>6000000)throw Error('Images must be under 6 MB to read their text.');
    const dataUrl=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(Error('That image could not be read.'));reader.readAsDataURL(f);});
@@ -578,21 +630,18 @@ $('attach').onclick=()=>{pending.push(preview.kind==='screenshot'?preview:{...pr
   }finally{button.disabled=false;$('attach').disabled=false;$('analyzeShot').disabled=false;}
 };
 $('cancelContext').onclick=$('cancelContextTop').onclick=()=>$('contextDialog').close();
-$('send').onclick=safe(()=>send());$('stop').onclick=()=>controller?.abort();$('regenerate').onclick=safe(()=>send(true));$('new').onclick=safe(newChat);$('filter').oninput=renderHistory;$('back').onclick=safe(()=>moveHistory(-1));$('forward').onclick=safe(()=>moveHistory(1));
-$('delete').onclick=safe(()=>deleteChat(state.current));
 $('export').onclick=safe(()=>{const c=current();if(!c)throw Error('No conversation to export.');const text=markdown({...c,messages:c.messages.map(m=>({...m,content:m.content+(m.refs||[]).filter(r=>r.kind!=='screenshot').map(referenceText).join('')+(m.sources?.length?'\n\nSources:\n'+m.sources.map(s=>s.url).join('\n'):'')}))});const url=URL.createObjectURL(new Blob([text],{type:'text/markdown'})),a=element('a');a.href=url;a.download='orbit-conversation.md';a.click();setTimeout(()=>URL.revokeObjectURL(url),5000);});
 $('theme').onclick=safe(async()=>{state.theme=effectiveTheme()==='light'?'dark':'light';applyAppearance();await save();});function resizeText(delta){const sizes=['small','medium','large','xlarge'],i=Math.max(0,Math.min(sizes.length-1,sizes.indexOf(state.fontSize||'medium')+delta));state.fontSize=sizes[i];applyAppearance();return save();}$('textSmaller').onclick=safe(()=>resizeText(-1));$('textLarger').onclick=safe(()=>resizeText(1));
 const PANEL_MIN=200,PANEL_MAX=480;
 function clampPanel(px){return Math.max(PANEL_MIN,Math.min(PANEL_MAX,Math.round(px)));}
 function persistUI(){try{writeLocal({orbitUI:ui});}catch{}}
-function applyPanelPrefs(){const app=$('app');if(!app)return;const width=clampPanel(ui.sidebarWidth||272);document.documentElement.style.setProperty('--sidebar-width',width+'px');app.classList.toggle('nav-hidden',!!ui.navHidden);app.classList.toggle('composer-expanded',!!ui.composerExpanded);const t=$('toggleNav');if(t){t.setAttribute('aria-expanded',String(!ui.navHidden));t.title=ui.navHidden?'Show conversation panel':'Hide conversation panel ('+modLabel+'+B)';}const ct=$('composerToggle');if(ct)ct.textContent=ui.composerExpanded?'Shrink':'Expand';try{document.body.dataset.mode=new URLSearchParams(location.search).has('float')?'popup':'inline';}catch{document.body.dataset.mode='inline';}}
+function applyPanelPrefs(){const app=$('app');if(!app)return;const width=clampPanel(ui.sidebarWidth||272);document.documentElement.style.setProperty('--sidebar-width',width+'px');app.classList.toggle('nav-hidden',!!ui.navHidden);const t=$('toggleNav');if(t){t.setAttribute('aria-expanded',String(!ui.navHidden));t.title=ui.navHidden?'Show conversation panel':'Hide conversation panel ('+modLabel+'+B)';}try{document.body.dataset.mode=new URLSearchParams(location.search).has('float')?'popup':'inline';}catch{document.body.dataset.mode='inline';}}
 function toggleNavPanel(){ui.navHidden=!ui.navHidden;if(ui.navHidden)closeNav();applyPanelPrefs();persistUI();}
 function sizePanelBy(delta){if(ui.navHidden&&delta>0)ui.navHidden=false;ui.sidebarWidth=clampPanel((ui.sidebarWidth||272)+delta);applyPanelPrefs();persistUI();}
 function openNav(){$('app').classList.add('nav-open');$('navScrim').hidden=false;}function closeNav(){$('app').classList.remove('nav-open');$('navScrim').hidden=true;}$('menu').onclick=openNav;$('closeNav').onclick=$('navScrim').onclick=closeNav;
 if($('toggleNav'))$('toggleNav').onclick=()=>toggleNavPanel();
 if($('navShrink'))$('navShrink').onclick=()=>sizePanelBy(-40);
 if($('navGrow'))$('navGrow').onclick=()=>sizePanelBy(40);
-if($('composerToggle'))$('composerToggle').onclick=()=>{ui.composerExpanded=!ui.composerExpanded;applyPanelPrefs();persistUI();};
 (function wireSidebarResize(){const handle=$('sidebarResize');if(!handle||!$('sidebar'))return;let dragging=false;function live(px){ui.sidebarWidth=px;document.documentElement.style.setProperty('--sidebar-width',px+'px');}handle.addEventListener('pointerdown',e=>{if(ui.navHidden)return;dragging=true;try{handle.setPointerCapture(e.pointerId);}catch{}e.preventDefault();});handle.addEventListener('pointermove',e=>{if(!dragging)return;const rect=$('sidebar').getBoundingClientRect();live(clampPanel(e.clientX-rect.left));});const end=()=>{if(!dragging)return;dragging=false;persistUI();};handle.addEventListener('pointerup',end);handle.addEventListener('pointercancel',end);handle.addEventListener('dblclick',()=>{ui.sidebarWidth=272;applyPanelPrefs();persistUI();});handle.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'){e.preventDefault();sizePanelBy(-20);}else if(e.key==='ArrowRight'){e.preventDefault();sizePanelBy(20);}else if(e.key==='Home'){e.preventDefault();ui.sidebarWidth=272;applyPanelPrefs();persistUI();}});})();
 async function popoutFloat(){if(busy||!ownsWorkspace)return;await save();ownsWorkspace=false;releaseLock?.();ownershipNotice('Workspace moved to a floatable window.','Continue there. Close it before returning here and selecting Try again.');const url=chrome.runtime.getURL('index.html')+'?float=1';if(chrome.windows?.create)await chrome.windows.create({url,type:'popup',width:480,height:800,focused:true});else window.open(url,'_blank','width=480,height=800');}
 async function resizeFloatWindow(delta){try{if(!chrome.windows?.getCurrent)throw Error('Window API unavailable');const w=await chrome.windows.getCurrent();const next=Math.max(360,Math.min(1200,(w.width||480)+delta));await chrome.windows.update(w.id,{width:next});}catch{status('Window resize unavailable here. Drag the window edge to expand or shrink it.');}}
@@ -640,6 +689,7 @@ async function init(){
   if(!state.chats.some(c=>c.id===state.current))state.current=state.chats[0]?.id||'';
   if(!state.current&&state.chats[0])state.current=state.chats[0].id;
   if(state.current&&!state.recentChats?.includes(state.current))rememberCurrent(state.current);
+  if(state.style)$('style').value=state.style;
   if($('newKbd'))$('newKbd').textContent=modLabel+'+K';
   // Learned memories live outside the workspace state so a large chat history never
   // crowds them; persistence goes through the same guarded writer as everything else.

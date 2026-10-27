@@ -129,15 +129,15 @@ for(const w of widths){
   await send('Emulation.setDeviceMetricsOverride',{width:w,height:900,deviceScaleFactor:1,mobile:false},ui);
   await sleep(500);
   const m=await evaluate(ui,`
-    const de=document.documentElement, bar=document.querySelector('.toolbar');
-    const clipped=bar?[...bar.querySelectorAll('button,select')].filter(el=>el.getBoundingClientRect().right>bar.getBoundingClientRect().right+1).map(el=>el.id||el.textContent.trim().slice(0,14)):[];
+    const de=document.documentElement, bar=document.querySelector('.composer-row');
+    const clipped=bar?[...bar.querySelectorAll('button')].filter(el=>el.getBoundingClientRect().right>bar.getBoundingClientRect().right+1).map(el=>el.id||el.textContent.trim().slice(0,14)):[];
     return {docScrollX:de.scrollWidth-de.clientWidth,
       bodyScrollX:document.body.scrollWidth-document.body.clientWidth,
-      toolbarOverflow:bar?bar.scrollWidth-bar.clientWidth:null, clipped};`);
+      rowOverflow:bar?bar.scrollWidth-bar.clientWidth:null, clipped};`);
   const png=(await send('Page.captureScreenshot',{format:'png'},ui)).result?.data;
   const file=join(OUT,`orbit-${w}.png`);
   if(png){writeFileSync(file,Buffer.from(png,'base64')); shots.push(file);}
-  record(`layout at ${w}px has no horizontal page overflow`, m.docScrollX<=1&&m.bodyScrollX<=1, `docScrollX=${m.docScrollX} bodyScrollX=${m.bodyScrollX} toolbarOverflow=${m.toolbarOverflow}`);
+  record(`layout at ${w}px has no horizontal page overflow`, m.docScrollX<=1&&m.bodyScrollX<=1, `docScrollX=${m.docScrollX} bodyScrollX=${m.bodyScrollX} rowOverflow=${m.rowOverflow}`);
   record(`every composer control is visible at ${w}px`, m.clipped.length===0, `clipped=[${m.clipped}]`);
 }
 
@@ -192,7 +192,11 @@ if(cap?.ok){
   // The dialog itself: click the real Screenshot button and confirm the captured image is shown
   // and that every action is inside the dialog box (a scrolled-out action is a real failure).
   const dialogCheck=`
-    document.getElementById('screenshot').click();
+    document.getElementById('attach').click();
+    await new Promise(r=>setTimeout(r,150));
+    const shot=[...document.querySelectorAll('.composer-menu .composer-menu-item')].find(b=>b.textContent.startsWith('Screenshot'));
+    if(!shot) return {ok:false,error:'no Screenshot item in the attach menu'};
+    shot.click();
     await new Promise(r=>setTimeout(r,2500));
     const d=document.getElementById('contextDialog'), img=document.getElementById('shotPreview');
     const box=d.getBoundingClientRect(), names=['cancelContext','ocrShot','analyzeShot','attach'];

@@ -133,3 +133,15 @@ Covered by `npm test` (221 extension + 12 native) for the contracts. These need 
 65. Run a task that ends with something worth keeping ("remember I prefer the vendor list sorted by date") and approve the `memory_save` step. Confirm Settings → Context shows it under **What Orbit has learned** as *Needs your review*, **Confirm** clears that, **Forget** removes it, and a fresh conversation in a different chat knows the fact.
 66. Ask a task to save a fake "password: hunter2" as memory: the prompt bounds this, but verify the approval dialog lets you refuse, and that refusing saves nothing.
 67. Leave a run going for 20+ seconds: confirm the status line escalates ("Still working on it…", then "Taking longer than usual — Stop is still available.") without ending anything.
+
+## Cycle 13 — one-row composer (2026-10-28)
+
+Covered by `npm test` (223 extension + 12 native) for the wiring and by
+`npm run verify:chrome` for layout. In real Chrome:
+
+68. Load dist/, pin Orbit on a webpage: confirm the composer is ONE row — [+] · prompt · Agent ▾ · ↑ — and the whole footer row of buttons is gone. The prompt starts one line tall and grows as you type (up to ~6 lines), shrinking again after Send.
+69. Click +: confirm the menu lists Add page…, Screenshot, Attach file, Skills… — each opens exactly what the old button opened (page tools dialog, screenshot preview with capture prompt, file picker, skills menu). Clicking + again or anywhere outside closes it.
+70. Type nothing and click the Agent caret: Research with Reach and Start as task are disabled with the note "Research and tasks need something to do — type it first." Act on this page is clickable and runs the old agent loop with its default goal.
+71. With text typed, Agent caret → Research with Reach runs the old Reach loop (review dialogs intact); → Start as task creates a task ("On it." + card in this chat). The main Agent button (no caret) runs the agent as before.
+72. Confirm Regenerate (↻) and Export (⤓) in the header work as the old footer buttons did; confirm deleting a conversation via the sidebar × still asks and works. Settings → Context now holds the Assistant style dropdown — change it to Analyst, send a message, restart the panel, confirm it stuck.
+73. At 400px width confirm no horizontal overflow and no clipped composer control; the + menu and skills menu stay inside the viewport above the button that opened them.

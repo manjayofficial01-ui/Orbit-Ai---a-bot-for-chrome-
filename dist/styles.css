@@ -101,7 +101,7 @@ body[data-mode="popup"] #float{display:none}
 .reply-chips{display:flex;flex-wrap:wrap;gap:7px;max-width:820px;margin:-14px auto 26px}
 .reply-chips button{min-height:36px;padding:0 13px;border:1px solid color-mix(in oklab,var(--primary) 38%,var(--border));border-radius:999px;background:var(--surface);color:var(--primary);font-size:.82rem;font-weight:600}
 .reply-chips button:hover:not(:disabled){background:color-mix(in oklab,var(--primary) 10%,var(--surface));border-color:var(--primary)}
-.skills-menu{position:absolute;bottom:calc(100% + 8px);left:8px;z-index:30;width:min(340px,86vw);padding:12px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface-2);box-shadow:var(--shadow)}
+.skills-menu,.composer-menu{position:fixed;z-index:40;min-width:240px;padding:10px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface-2);box-shadow:var(--shadow)}.composer-menu{width:min(300px,86vw)}.skills-menu{width:min(340px,92vw)}.composer-menu button,.skills-menu-item{width:100%}.composer-menu-item{display:flex;align-items:flex-start;gap:9px;width:100%;text-align:left;padding:9px 10px;border-radius:var(--radius-md);border:1px solid transparent}.composer-menu-item:hover:not(:disabled){background:var(--offset)}.composer-menu-item strong{display:block;font-size:.84rem;font-weight:650;color:var(--text)}.composer-menu-item span{display:block;font-size:.74rem;color:var(--muted);margin-top:1px;line-height:1.35}.composer-menu-item:disabled strong{color:var(--muted)}.composer-menu-divider{height:1px;margin:7px 4px;background:var(--divider)}
 .composer{position:relative}
 .skills-menu-head{font-size:.74rem;font-weight:750;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:4px}
 .skills-menu-hint{font-size:.76rem;color:var(--muted);margin-bottom:10px}
@@ -110,7 +110,7 @@ body[data-mode="popup"] #float{display:none}
 .skills-menu-item strong{display:block;font-size:.86rem;font-weight:650;color:var(--text)}
 .skills-menu-item span{display:block;font-size:.76rem;color:var(--muted);margin-top:2px;line-height:1.4}
 .skills-menu-close{width:100%;min-height:34px;margin-top:8px;border-top:1px solid var(--divider);color:var(--muted);font-size:.78rem}
-@media(max-width:720px){.reply-chips{margin:-10px 0 22px}.skills-menu{width:calc(100vw - 32px);left:0}}
+@media(max-width:720px){.reply-chips{margin:-10px 0 22px}.skills-menu{width:min(340px,92vw)}}
 
 /* The masked value box and the hand-back pause. Both are blocking dialogs: the run is
    stopped until the person answers, because a secret or a sign-in is theirs to supply. */

@@ -10,14 +10,15 @@ const [app,html,manifestText]=await Promise.all([
 ]);
 
 test('Reach review, settings, and progress controls exist without inline script',()=>{
-  for(const id of ['reach','reachInstallCommand','reachCopyInstall','reachCheck','reachStatus','reachCapabilities','reachReviewDialog','reachReviewOperation','reachReviewChannel','reachReviewRequest','reachReviewError','reachStop','reachDecline','reachApprove']){
+  // Since 3.2 Reach starts from the Agent button's mode menu, not a dedicated composer button.
+  for(const id of ['reachInstallCommand','reachCopyInstall','reachCheck','reachStatus','reachCapabilities','reachReviewDialog','reachReviewOperation','reachReviewChannel','reachReviewRequest','reachReviewError','reachStop','reachDecline','reachApprove']){
     assert.ok(html.includes(`id="${id}"`),`missing #${id}`);
   }
   for(const match of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)){
     assert.match(match[1],/\bsrc\s*=/,'extension scripts must use CSP-safe external files');
     assert.equal(match[2].trim(),'');
   }
-  assert.match(app,/\$\('reach'\)\.onclick=safe\(runResearch\)/);
+  assert.match(app,/label:'Research with Reach',sub:'[^']+',disabled:!hasText,onclick:safe\(runResearch\)/);
   assert.match(app,/\$\('reachStop'\)\.onclick/);
 });
 

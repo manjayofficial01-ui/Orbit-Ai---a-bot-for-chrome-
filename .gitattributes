@@ -1,0 +1,4 @@
+# Vendored third-party bytes are hash-pinned in vendor/VENDOR.md and must never be
+# line-ending normalized: core.autocrlf rewrote them on checkout once already.
+vendor/** -text
+dist/vendor/** -text
