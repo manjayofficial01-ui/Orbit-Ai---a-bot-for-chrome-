@@ -97,6 +97,7 @@
     <p class="section-note">Capability metadata is not a connectivity, account, or login-health check. Never enter API keys, cookies, passwords, or account tokens here. Orbit sends no provider credentials to Agent Reach.</p>
   </section>
   <section data-settings-panel="context" hidden>
+    <label class="check"><input id="fullAccess" type="checkbox"> <span><strong>Full access — all sites</strong><small>Grant Orbit every website at once: the agent, page context, fetches, screenshots and What's new then work on any site without a per-site prompt. Chrome shows one prompt for this. Turning it off removes the blanket grant (per-site approvals you already made stay; Reset in Advanced clears everything). Orbit's own action approvals are separate and always apply.</small></span></label>
     <label class="check"><input id="smartContext" type="checkbox"> <span><strong>Smart page context</strong><small>Attach a fresh, privacy-filtered snapshot of the active tab to every message automatically — until you attach something else or turn this off. Chrome asks once per site for access.</small></span></label>
     <label>Context depth<select id="contextDepth"><option value="focused">Focused · selection or visible essentials</option><option value="balanced">Balanced · main page text</option><option value="deep">Deep · larger page snapshot</option></select></label>
     <label class="check"><input id="autoTitle" type="checkbox"> <span><strong>Smart conversation titles</strong><small>Create concise local titles from your first request.</small></span></label>

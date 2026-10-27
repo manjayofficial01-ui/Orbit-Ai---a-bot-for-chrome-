@@ -5,8 +5,9 @@ import {readFile} from 'node:fs/promises';
 // Static regression gates for fixes that live in browser-only code paths (no DOM/Chrome runtime here).
 // They lock the source shape that makes the behaviour safe; live behaviour is covered by docs/MANUAL-QA.md.
 const root=new URL('../',import.meta.url);
-const [app,background,pageAccess,agentRun,manifest]=await Promise.all([
+const [app,html,background,pageAccess,agentRun,manifest]=await Promise.all([
   readFile(new URL('src/app.js',root),'utf8'),
+  readFile(new URL('dist/index.html',root),'utf8'),
   readFile(new URL('src/background.js',root),'utf8'),
   readFile(new URL('src/page-access.js',root),'utf8'),
   readFile(new URL('src/agent-run.js',root),'utf8'),
@@ -138,9 +139,9 @@ test('navigation tools are grant-gated and end their step',()=>{
   assert.match(agentRun,/const navigated=results\.some\(r=>r\.ok&&\(r\.tool==='goto'\|\|r\.tool==='nav-history'\|\|\(r\.tool==='read-tab'&&r\.detail!=='already reading this tab'\)\)\)/);
   const gotoFn=/const gotoUrl=async\(raw\)=>\{[\s\S]*?\n  \};/.exec(agentRun)?.[0]||'';
   assert.ok(gotoFn.length>0,'gotoUrl must exist');
-  assert.match(gotoFn,/permissions\.request\(\{origins:\[pattern\]\}\)/,'the destination grant is requested');
-  assert.ok(gotoFn.indexOf('permissions.request')<gotoFn.indexOf('chrome.tabs.update'),'the site grant must be settled before any navigation happens');
-  assert.match(gotoFn,/if\(!granted\)return \{tool:'goto',ok:false,error:'Site access for '/,'a denied grant must abort before navigating');
+  assert.match(gotoFn,/ensureSiteAccess\(/,'the destination grant goes through the shared site gate');
+  assert.ok(gotoFn.indexOf('ensureSiteAccess')<gotoFn.indexOf('chrome.tabs.update'),'the site grant must be settled before any navigation happens');
+  assert.match(gotoFn,/if\(!await ensureSiteAccess\([^)]*\)\)return \{tool:'goto',ok:false,error:'Site access for '/,'a denied grant must abort before navigating');
   assert.match(gotoFn,/u\.username\|\|u\.password/,'credential-bearing URLs are refused');
 });
 
@@ -181,4 +182,18 @@ test('the approval gate survives the side panel: window.confirm is banned from r
   assert.match(agentRun,/approve\?approve\(summary\):askStepApproval\(summary\)/,'tests can inject the gate');
   assert.match(agentRun,/autoSafe===true&&allActionsSafeReadOnly/,'hands-free reading is opt-in and read-only');
   assert.match(app,/autoSafe:cfg\.autoSafeActions===true/,'both run paths honour the setting');
+});
+
+test('full access is an explicit, revocable setting every site gate honours',()=>{
+  assert.match(pageAccess,/export async function hasFullAccess/,'the blanket-grant read is shared');
+  assert.match(pageAccess,/export async function ensureSiteAccess/,'the one site gate is shared');
+  const gates=[...agentRun.matchAll(/ensureSiteAccess\(/g)].length;
+  assert.ok(gates>=4,'the agent loop gates its entry, tab switch, navigation and goto paths ('+gates+' found)');
+  assert.match(app,/hasFullAccess\(\)\|\|await chrome\.permissions\.contains/,'the check-in honours full access but never prompts');
+  assert.match(html,/id="fullAccess"/,'the toggle exists in Settings');
+  assert.match(app,/\$\('fullAccess'\)\.onchange/,'the toggle is wired');
+  assert.match(app,/permissions\.request\(\{origins:\['<all_urls>'\]\}\)/,'granting requests exactly the blanket pattern');
+  assert.match(app,/permissions\.remove\(\{origins:\['<all_urls>'\]\}\)/,'revoking removes exactly the blanket pattern');
+  assert.match(app,/if\(\$\('fullAccess'\)\)\$\('fullAccess'\)\.checked=await hasFullAccess\(\)/,'boot syncs the box from Chrome, not stored state');
+  assert.doesNotMatch(manifest,/"permissions":\s*\[[^\]]*all_urls/,'the blanket grant must stay optional, never required');
 });

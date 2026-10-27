@@ -1,4 +1,4 @@
-import {pageOrigin,targetTabs,snapshotPage,agentAct,navHistoryStep,captureVisibleTabImage,secretFill} from './page-access.js';
+import {pageOrigin,targetTabs,snapshotPage,agentAct,navHistoryStep,captureVisibleTabImage,secretFill,ensureSiteAccess} from './page-access.js';
 import {generateOnce} from './core.js';
 import {AGENT_MAX_STEPS,AGENT_PROTOCOL_RETRIES,AGENT_TOOLS,buildAgentSystemPrompt,buildAgentObservation,parseAgentActions,stripAgentFence,describeActions,snapshotForModel,allActionsSafeReadOnly} from './agent.js';
 import {routeSkills,narrowTools,skillInstructions} from './skills.js';
@@ -182,7 +182,7 @@ export async function runAgentLoop({cfg,key,goal,onEvent,signal,approve,autoSafe
   pageOrigin(tab.url);
   const fresh=await chrome.tabs.get(tab.id);
   if(fresh.url!==tab.url) throw Error('Target navigated. Retry on its current page.');
-  const grant=await chrome.permissions.request({origins:[pageOrigin(fresh.url)]});
+  const grant=await ensureSiteAccess(pageOrigin(fresh.url));
   if(!grant) throw Error('Permission denied. No page content was read.');
   const tabRefs=listTabs(tabs);
   let activeTabId=tab.id;
@@ -198,9 +198,7 @@ export async function runAgentLoop({cfg,key,goal,onEvent,signal,approve,autoSafe
     catch{ return {tool:'read-tab',ref,ok:false,error:'That tab was closed.'}; }
     if(!target.url){ return {tool:'read-tab',ref,ok:false,error:'That tab has no readable URL.'}; }
     try{ pageOrigin(target.url); }catch(e){ return {tool:'read-tab',ref,ok:false,error:e.message}; }
-    const pattern=pageOrigin(target.url);
-    let granted=await chrome.permissions.contains({origins:[pattern]});
-    if(!granted) granted=await chrome.permissions.request({origins:[pattern]});
+    const granted=await ensureSiteAccess(pageOrigin(target.url));
     if(!granted) return {tool:'read-tab',ref,ok:false,error:'Site access for '+new URL(target.url).hostname+' was not granted; the tab was not read.'};
     try{
       const next=await takeSnapshot(target.id);
@@ -211,8 +209,7 @@ export async function runAgentLoop({cfg,key,goal,onEvent,signal,approve,autoSafe
   const syncOrigin=async()=>{ try{ const t=await chrome.tabs.get(activeTabId); if(t?.url) activeUrl=t.url; }catch{} };
   const snapshotAfterNavigation=async(url)=>{
     let pattern;try{pattern=pageOrigin(url);}catch{return {error:'The new page ('+String(url).slice(0,80)+') is not a normal webpage Orbit can script.'};}
-    let granted=await chrome.permissions.contains({origins:[pattern]});
-    if(!granted)granted=await chrome.permissions.request({origins:[pattern]});
+    const granted=await ensureSiteAccess(pattern);
     if(!granted)return {error:'Site access for '+new URL(url).hostname+' was not granted; the page opened but was not read.'};
     const wantOrigin=new URL(url).origin;
     for(let i=0;i<16;i++){
@@ -230,10 +227,7 @@ export async function runAgentLoop({cfg,key,goal,onEvent,signal,approve,autoSafe
   const gotoUrl=async(raw)=>{
     let u;try{u=new URL(String(raw||'').trim());}catch{return {tool:'goto',ok:false,error:'goto text must be a valid URL.'};}
     if(!['http:','https:'].includes(u.protocol)||u.username||u.password)return {tool:'goto',ok:false,error:'goto only accepts plain http(s) URLs without credentials.'};
-    const pattern=u.protocol+'//'+u.hostname+'/*';
-    let granted=await chrome.permissions.contains({origins:[pattern]});
-    if(!granted)granted=await chrome.permissions.request({origins:[pattern]});
-    if(!granted)return {tool:'goto',ok:false,error:'Site access for '+u.hostname+' was not granted; nothing was opened.'};
+    if(!await ensureSiteAccess(u.protocol+'//'+u.hostname+'/*'))return {tool:'goto',ok:false,error:'Site access for '+u.hostname+' was not granted; nothing was opened.'};
     let prevUrl='';try{prevUrl=(await chrome.tabs.get(activeTabId)).url||'';}catch{}
     try{await chrome.tabs.update(activeTabId,{url:u.href});}
     catch(e){return {tool:'goto',ok:false,error:'Navigation failed: '+String(e&&e.message||e).slice(0,160)};}

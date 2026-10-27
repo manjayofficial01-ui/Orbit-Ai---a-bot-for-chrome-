@@ -56,7 +56,7 @@ function harness({tabs,pageUrls,act,cancelAt=-1,throwOnAct=false,replies=[],tabU
         throw Error('Unexpected injected function '+func.name);
       }
     },
-    permissions:{async request({origins}){seen.requested.push(...origins);return !origins.some(o=>denyOrigins.includes(o));},async contains({origins}){return !origins.some(o=>denyOrigins.includes(o));}}
+    permissions:{async request({origins}){seen.requested.push(...origins);return !origins.some(o=>denyOrigins.includes(o));},async contains({origins}){return !origins.some(o=>denyOrigins.includes(o)||(denyOrigins.length&&o==='<all_urls>'));}}
   };
   globalThis.fetch=async(_url,options)=>{
     const body=JSON.parse(options.body);

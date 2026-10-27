@@ -157,3 +157,13 @@ Covered by `npm test` (227 extension + 12 native) for the wiring; in real Chrome
 76. Settings → Context → **Hands-free reading** (off by default): with it ON, a scroll/snapshot/extract step runs with no dialog and the transcript shows "[auto-approved · step N] Read-only step ran without asking…"; the moment the model proposes a click or fill, the dialog returns. With it OFF, every step asks as before.
 77. In the panel, delete a conversation from the sidebar × and delete a message: a real **Delete/Keep** dialog must appear (previously these silently did nothing in the panel). Settings → Advanced → the clear-all button likewise.
 78. Add page → scan a text field → write: the **Replace field** dialog shows the replacement text in a scrollable box before writing (previously the write was silently refused in the panel).
+
+## Cycle 15 — full access, all sites (2026-10-28)
+
+Covered by `npm test` (233 extension + 12 native) for the gate logic; in real Chrome:
+
+79. Settings → Context → **Full access — all sites**: Chrome shows ONE prompt for all-sites access. Accept it: the checkbox stays on. From then on, agent runs on brand-new sites, goto to any URL, tab switches, URL fetches and the all-tabs digest run with NO per-site prompt.
+80. Confirm the action approval gate still applies with full access on: every click/fill step still shows the "Orbit wants to act" dialog (and Hands-free reading still covers only read-only steps).
+81. Toggle Full access OFF: confirm the checkbox clears, and the next agent goto to an ungranted site shows the per-site Chrome prompt again. Also confirm chrome://extensions → Orbit → Site access no longer lists the blanket "on all sites" entry.
+82. Revoke from Chrome's side instead (chrome://extensions → Orbit → Site access → remove all), reopen Orbit: the Full access checkbox must boot OFF (Chrome is the source of truth).
+83. With full access ON, run What's new with several sites open: every open page is checked (the "Open but not granted" skip note should not appear for normal sites).

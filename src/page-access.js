@@ -6,6 +6,23 @@ export function pageOrigin(url){
  return `${u.protocol}//${u.hostname}/*`;
 }
 export function targetTabs(tabs,selfURL){return tabs.filter(t=>t.id&&t.url&&t.url!==selfURL).filter(t=>{try{pageOrigin(t.url);return true;}catch{return false;}}).sort((a,b)=>(b.lastAccessed||0)-(a.lastAccessed||0));}
+
+// Full access (Settings -> Context): the optional <all_urls> grant. When the person has
+// granted it, every site gate below opens without a per-site prompt — the agent, page
+// context, fetches, screenshots and the check-in all work anywhere. It is revocable
+// from the same toggle, and Orbit's own action approvals are a separate, always-on gate.
+export async function hasFullAccess(){
+  try{ return await chrome.permissions.contains({origins:['<all_urls>']}); }
+  catch{ return false; }
+}
+
+// The one site gate every page path goes through: full access counts, an exact
+// per-site grant counts, otherwise ask once for this pattern.
+export async function ensureSiteAccess(pattern){
+  if(await hasFullAccess()) return true;
+  try{ if(await chrome.permissions.contains({origins:[pattern]})) return true; }catch{}
+  try{ return await chrome.permissions.request({origins:[pattern]}); }catch{ return false; }
+}
 export function inspectPage(){
  const selection=window.getSelection()?.toString()||'';
  let text='';
@@ -61,7 +78,8 @@ export async function openPageTools(onReference){
    const list=targetTabs(await chrome.tabs.query({}),location.href).slice(0,12);
    if(!list.length)throw Error('No supported webpages found.');
    const patterns=[...new Set(list.map(t=>pageOrigin(t.url)))];
-   const granted=await chrome.permissions.request({origins:patterns});
+   let granted=true;
+   if(!await hasFullAccess()){granted=await chrome.permissions.request({origins:patterns});}
    if(!granted)throw Error('Site access was not granted; nothing was read.');
    msg.textContent='Reading '+list.length+' tab(s)…';
    const parts=[];let used=0,read=0;
@@ -96,7 +114,7 @@ export async function openPageTools(onReference){
    if(u.username||u.password)throw Error('URLs with embedded credentials are not fetched.');
    if(u.protocol!=='https:'&&!(u.protocol==='http:'&&['localhost','127.0.0.1'].includes(u.hostname)))throw Error('Only https:// URLs (or local http servers) can be fetched.');
    const pattern=u.protocol+'//'+u.hostname+'/*';
-   if(!await chrome.permissions.contains({origins:[pattern]})){const okp=await chrome.permissions.request({origins:[pattern]});if(!okp)throw Error('Site access was not granted; nothing was fetched.');}
+   if(!await ensureSiteAccess(pattern))throw Error('Site access was not granted; nothing was fetched.');
    msg.textContent='Fetching '+u.origin+' as text…';
    const res=await fetch(u.href,{credentials:'omit',redirect:'error',referrerPolicy:'no-referrer',signal:AbortSignal.timeout(20000)});
    if(!res.ok)throw Error('Fetch returned HTTP '+res.status+'.');
@@ -418,11 +436,7 @@ export async function quickPageReference(depth='balanced'){
  const active=(await chrome.tabs.query({active:true,lastFocusedWindow:true}))[0];
  if(!active?.id||!active.url) throw Error('No active webpage found.');
  pageOrigin(active.url);
- const pattern=pageOrigin(active.url);
- if(!await chrome.permissions.contains({origins:[pattern]})){
-  const granted=await chrome.permissions.request({origins:[pattern]});
-  if(!granted) throw Error('Site access was not granted.');
- }
+ if(!await ensureSiteAccess(pageOrigin(active.url))) throw Error('Site access was not granted.');
  let results;
  try{results=await chrome.scripting.executeScript({target:{tabId:active.id},func:inspectPage});}
  catch(e){throw Error('Chrome could not read this page. '+e.message);}
@@ -454,11 +468,7 @@ export async function captureActiveScreenshot(){
  const active=(await chrome.tabs.query({active:true,lastFocusedWindow:true}))[0];
  if(!active?.id||!active.url) throw Error('No active webpage found.');
  pageOrigin(active.url);
- const pattern=pageOrigin(active.url);
- if(!await chrome.permissions.contains({origins:[pattern]})){
-  const granted=await chrome.permissions.request({origins:[pattern]});
-  if(!granted) throw Error('Site access was not granted.');
- }
+ if(!await ensureSiteAccess(pageOrigin(active.url))) throw Error('Site access was not granted.');
  const dataUrl=await captureVisibleTabImage(active.windowId);
  if(dataUrl.length>3500000)throw Error('Screenshot is too large to attach. Reduce browser zoom or window size.');
  return {title:active.title||'Active page',url:active.url,dataUrl,kind:'screenshot'};

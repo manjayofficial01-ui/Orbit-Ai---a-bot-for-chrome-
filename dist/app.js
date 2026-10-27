@@ -1,4 +1,4 @@
-import {openPageTools,quickPageReference,captureActiveScreenshot,targetTabs,pageOrigin} from './page-access.js';
+import {openPageTools,quickPageReference,captureActiveScreenshot,targetTabs,pageOrigin,hasFullAccess} from './page-access.js';
 import {normalizeBase,hostPattern,generate,generateOnce,imageUserMessage,latestImageTurnIndex,markdown,requestBody} from './core.js';
 import {runAgentLoop,takeSnapshot} from './agent-run.js';
 import {reachStatus} from './reach-client.js';
@@ -270,8 +270,10 @@ async function runCheckin(){
   const pages=[],skipped=[];
   for(const t of openTabs){
     let origin;try{origin=pageOrigin(t.url);}catch{continue;}
+    // Read-only pass: full access counts, an existing per-site grant counts, but the
+    // check-in never prompts — an ungranted page is named as skipped instead.
     let granted=false;
-    try{granted=await chrome.permissions.contains({origins:[origin]});}catch{}
+    try{granted=await hasFullAccess()||await chrome.permissions.contains({origins:[origin]});}catch{}
     if(!granted){skipped.push(String(t.url||'').slice(0,100));continue;}
     try{
       const snap=await takeSnapshot(t.id);
@@ -601,6 +603,19 @@ function openSkillsMenu(){
 function growPrompt(){const p=$('prompt');p.style.height='auto';p.style.height=Math.min(p.scrollHeight,180)+'px';}
 $('prompt').addEventListener('input',growPrompt);
 $('style').onchange=safe(async()=>{state.style=$('style').value;await save();});
+// Full access — all sites: one optional <all_urls> grant, requested and revoked here.
+// Chrome is the source of truth, so the box is synced from the actual permission at boot.
+$('fullAccess').onchange=safe(async()=>{
+  const box=$('fullAccess');
+  if(box.checked){
+    let ok=false;try{ok=await chrome.permissions.request({origins:['<all_urls>']});}catch{}
+    if(!ok){box.checked=false;throw Error('Chrome did not grant all-site access, so per-site prompts stay in use.');}
+    status('Full access granted — Orbit can read and act on any site. Action approvals still apply.');
+  }else{
+    try{await chrome.permissions.remove({origins:['<all_urls>']});}catch{}
+    status('Full access removed — per-site prompts return for ungranted sites.');
+  }
+});
 $('send').onclick=safe(()=>send());$('stop').onclick=()=>controller?.abort();$('regenerate').onclick=safe(()=>send(true));$('new').onclick=safe(newChat);$('filter').oninput=renderHistory;$('back').onclick=safe(()=>moveHistory(-1));$('forward').onclick=safe(()=>moveHistory(1));
 $('fileInput').onchange=safe(async()=>{const f=$('fileInput').files[0];$('fileInput').value='';if(!f)return;
  if(/^image\//.test(f.type)||/\.(png|jpe?g|webp|gif|bmp)$/i.test(f.name)){
@@ -699,6 +714,7 @@ async function init(){
     persist:list=>writeLocal({orbitMemories:list}),
   });
   try{ memoriesCache=await loadMemories(); }catch{ memoriesCache=[]; }
+  try{ if($('fullAccess'))$('fullAccess').checked=await hasFullAccess(); }catch{}
   applyAppearance();applyPanelPrefs();
   ownsWorkspace=true;render();
   try{ await consumeSelection(); }catch(e){ status('Selection draft could not be opened: '+e.message); }
