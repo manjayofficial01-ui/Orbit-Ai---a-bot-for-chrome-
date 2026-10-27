@@ -101,7 +101,7 @@ test('welcome-screen claims stay anchored to capabilities that exist in code',()
   assert.match(app,/No account, no telemetry — open source/);
   // The local-model claim must keep matching a real preset, and the approval claim a real gate.
   assert.match(app,/ollama:'http:\/\/localhost:11434\/v1'/,'the Ollama claim requires a working local preset');
-  assert.match(agentRun,/const ok=confirm\(/,'the per-action approval claim requires the confirm() gate');
+  assert.match(agentRun,/askStepApproval\(summary\)/,'the per-action approval claim requires the real dialog gate');
   assert.doesNotMatch(app,/free unlimited|unlimited credits|no limits/i,'no claim may promise unlimited anything');
 });
 
@@ -169,4 +169,16 @@ test('creating the first chat never discards the message attachments',()=>{
     'ensureChat must snapshot pending before newChat and restore it after');
   assert.equal([...app.matchAll(/await ensureChat\(\)/g)].length,5,'chat, agent, research, tasks and check-in must all use it');
   assert.doesNotMatch(app,/if\(!chat\)\{await newChat\(\);chat=current\(\);\}/,'no path may auto-create a chat while dropping pending references');
+});
+
+test('the approval gate survives the side panel: window.confirm is banned from run surfaces',()=>{
+  // Chrome suppresses window.confirm in the side panel and it silently returns false —
+  // which once made the agent "refuse" every step it proposed.
+  for(const [name,src] of [['app.js',app],['agent-run.js',agentRun],['page-access.js',pageAccess]]){
+    assert.doesNotMatch(src,/[^a-zA-Z.]confirm\(/,name+' must ask through a real dialog, never window.confirm');
+  }
+  assert.match(agentRun,/export async function askStepApproval/,'the gate is a real dialog');
+  assert.match(agentRun,/approve\?approve\(summary\):askStepApproval\(summary\)/,'tests can inject the gate');
+  assert.match(agentRun,/autoSafe===true&&allActionsSafeReadOnly/,'hands-free reading is opt-in and read-only');
+  assert.match(app,/autoSafe:cfg\.autoSafeActions===true/,'both run paths honour the setting');
 });

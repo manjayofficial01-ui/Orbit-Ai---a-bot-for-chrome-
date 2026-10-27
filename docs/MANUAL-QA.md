@@ -145,3 +145,15 @@ Covered by `npm test` (223 extension + 12 native) for the wiring and by
 71. With text typed, Agent caret → Research with Reach runs the old Reach loop (review dialogs intact); → Start as task creates a task ("On it." + card in this chat). The main Agent button (no caret) runs the agent as before.
 72. Confirm Regenerate (↻) and Export (⤓) in the header work as the old footer buttons did; confirm deleting a conversation via the sidebar × still asks and works. Settings → Context now holds the Assistant style dropdown — change it to Analyst, send a message, restart the panel, confirm it stuck.
 73. At 400px width confirm no horizontal overflow and no clipped composer control; the + menu and skills menu stay inside the viewport above the button that opened them.
+
+## Cycle 14 — the gate the side panel can answer (2026-10-28)
+
+The root cause of "the agent can't click or scroll": `window.confirm` is suppressed in
+the side panel and silently returns false, so every agent step was auto-"declined".
+Covered by `npm test` (227 extension + 12 native) for the wiring; in real Chrome:
+
+74. In the SIDE PANEL (pin Orbit, click its toolbar icon), type "scroll down and extract the headings on this page" and press Agent. A dialog titled **Orbit wants to act** must appear with the step description — Approve step runs it, Stop the run ends it. Before this fix, no dialog appeared and the transcript said the step was declined by you.
+75. Approve a step that clicks or fills: the action lands on the page and the loop continues to the next dialog. Nothing should ever be described as "declined by you" unless you pressed Stop the run.
+76. Settings → Context → **Hands-free reading** (off by default): with it ON, a scroll/snapshot/extract step runs with no dialog and the transcript shows "[auto-approved · step N] Read-only step ran without asking…"; the moment the model proposes a click or fill, the dialog returns. With it OFF, every step asks as before.
+77. In the panel, delete a conversation from the sidebar × and delete a message: a real **Delete/Keep** dialog must appear (previously these silently did nothing in the panel). Settings → Advanced → the clear-all button likewise.
+78. Add page → scan a text field → write: the **Replace field** dialog shows the replacement text in a scrollable box before writing (previously the write was silently refused in the panel).

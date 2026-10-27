@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AGENT_MAX_STEPS,AGENT_TOOLS,parseAgentActions,validateAgentAction,stripAgentFence,describeActions,buildAgentObservation,buildAgentSystemPrompt,extractFencedJson} from '../dist/agent.js';
+import {AGENT_MAX_STEPS,AGENT_TOOLS,parseAgentActions,validateAgentAction,stripAgentFence,describeActions,buildAgentObservation,buildAgentSystemPrompt,extractFencedJson,SAFE_READONLY_ACTIONS,allActionsSafeReadOnly} from '../dist/agent.js';
 import {requestAgentBody,generateOnce} from '../dist/core.js';
 
 test('parses orbit-actions fence',()=>{ const r=parseAgentActions('hi\n```orbit-actions\n{"actions":[{"tool":"click","ref":"e1"}]}\n```'); assert.equal(r.actions[0].tool,'click'); });
@@ -153,4 +153,12 @@ test('the voice contract carries the 35-word budget and the three-things rule',(
   const p=buildAgentSystemPrompt();
   assert.match(p,/under about 35 words/);
   assert.match(p,/Never list more than three things/);
+});
+
+test('hands-free reading covers only read-only actions',()=>{
+  assert.ok(allActionsSafeReadOnly([{tool:'scroll',text:'-300'},{tool:'extract'},{tool:'wait',text:'300'}]),'reads run hands-free');
+  assert.ok(!allActionsSafeReadOnly([]),'an empty step is not a read');
+  assert.ok(!allActionsSafeReadOnly([{tool:'scroll'},{tool:'click',ref:'e1'}]),'one mutating action forces the gate');
+  for(const mutating of ['click','fill','type','select','press','focus','goto','nav-history','read-tab','computer_write_file','computer_request_secret','computer_request_help','memory_save','done'])
+    assert.ok(!SAFE_READONLY_ACTIONS.has(mutating),mutating+' must always ask');
 });

@@ -41,6 +41,28 @@ export const AGENT_KEYS = [
   'ArrowRight',
 ];
 
+/**
+ * Actions that only read or reposition. With hands-free reading enabled (an opt-in
+ * setting), a step whose actions are all in this set runs without the per-step dialog,
+ * so the agent can look around on its own. Everything that changes state — a click, a
+ * navigation, a write, a secret or help request — is a decision the person makes every
+ * time and is deliberately absent here.
+ */
+export const SAFE_READONLY_ACTIONS = new Set([
+  'snapshot',
+  'extract',
+  'wait',
+  'scroll',
+  'hover',
+  'screenshot',
+  'computer_list_files',
+  'computer_read_file',
+]);
+
+export function allActionsSafeReadOnly(actions) {
+  return Array.isArray(actions) && actions.length > 0 && actions.every(a => a && SAFE_READONLY_ACTIONS.has(a.tool));
+}
+
 // ---------------------------------------------------------------------------
 // System prompt — OpenDuet `COMPUTER_GUIDANCE` + `PROVENANCE_GUIDANCE`
 // merged with Orbit's operator rules and concise-chat voice contract.

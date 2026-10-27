@@ -1,8 +1,9 @@
 import {pageOrigin,targetTabs,snapshotPage,agentAct,navHistoryStep,captureVisibleTabImage,secretFill} from './page-access.js';
 import {generateOnce} from './core.js';
-import {AGENT_MAX_STEPS,AGENT_PROTOCOL_RETRIES,AGENT_TOOLS,buildAgentSystemPrompt,buildAgentObservation,parseAgentActions,stripAgentFence,describeActions,snapshotForModel} from './agent.js';
+import {AGENT_MAX_STEPS,AGENT_PROTOCOL_RETRIES,AGENT_TOOLS,buildAgentSystemPrompt,buildAgentObservation,parseAgentActions,stripAgentFence,describeActions,snapshotForModel,allActionsSafeReadOnly} from './agent.js';
 import {routeSkills,narrowTools,skillInstructions} from './skills.js';
 import {addMemory} from './memory.js';
+import {askConfirm} from './dialogs.js';
 
 export async function resolveAgentTarget(){
   const active=await chrome.tabs.query({active:true,lastFocusedWindow:true});
@@ -158,7 +159,25 @@ export function askHandover(reason){
   });
 }
 
-export async function runAgentLoop({cfg,key,goal,onEvent,signal}){
+/**
+ * The per-step approval gate, as a real dialog.
+ *
+ * This used to be window.confirm() — which the Chrome side panel silently answers
+ * "false" — so in the panel every proposed step was "declined by you" and the agent
+ * could never click, scroll or fill anything. The dialog here works in every surface;
+ * tests inject `approve` into runAgentLoop instead of mocking window.confirm.
+ */
+export async function askStepApproval(message) {
+  return askConfirm({
+    title: 'Orbit wants to act',
+    body: 'Approve this step? Stopping ends the run.',
+    detail: message,
+    confirmLabel: 'Approve step',
+    cancelLabel: 'Stop the run',
+  });
+}
+
+export async function runAgentLoop({cfg,key,goal,onEvent,signal,approve,autoSafe=false}){
   const {tab,tabs}=await resolveAgentTarget();
   pageOrigin(tab.url);
   const fresh=await chrome.tabs.get(tab.id);
@@ -300,7 +319,17 @@ export async function runAgentLoop({cfg,key,goal,onEvent,signal}){
     const desc=explainStep(parsed.actions);
     const legend=parsed.actions.filter(a=>a.tool==='read-tab')
       .map(a=>{const e=tabRefs.find(t=>t.ref===a.ref);return a.ref+' = '+(e?e.title+' — '+e.url:'unknown tab');}).join('\n');
-    const ok=confirm('Orbit agent step '+step+' on '+new URL(activeUrl).origin+':\n\n'+desc+(legend?'\n\nTabs:\n'+legend:'')+'\n\nRun these '+parsed.actions.length+' action(s)? Cancel stops the run.');
+    const summary='Orbit agent step '+step+' on '+new URL(activeUrl).origin+':\n\n'+desc+(legend?'\n\nTabs:\n'+legend:'');
+    // Hands-free reading (opt-in): a step whose actions are all read-only runs without
+    // the dialog, and says so in the transcript. Anything that changes the page asks,
+    // always — with hands-free off, every step asks, as before.
+    let ok;
+    if(autoSafe===true&&allActionsSafeReadOnly(parsed.actions)){
+      ok=true;
+      onEvent?.({type:'auto-approved',step,text:'Read-only step ran without asking (hands-free reading is on): '+parsed.actions.map(a=>a.tool).join(', ')});
+    }else{
+      ok=await (approve?approve(summary):askStepApproval(summary));
+    }
     if(!ok){
       onEvent?.({type:'cancelled',step,text:'User cancelled at step '+step+'.'});
       // OpenDuet NO_ANSWER_CAME contract: record the refusal in history before returning,

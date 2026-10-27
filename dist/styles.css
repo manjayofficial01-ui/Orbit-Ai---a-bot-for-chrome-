@@ -122,6 +122,16 @@ body[data-mode="popup"] #float{display:none}
 .secret-dialog .row,.handover-dialog .row{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
 .secret-dialog .row button,.handover-dialog .row button{min-height:40px;padding:0 14px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface)}
 
+/* The real confirmation dialog. window.confirm is suppressed in the side panel and
+   silently answers "false" — every gate that matters goes through this instead. */
+.confirm-dialog{width:min(92vw,480px);padding:22px}
+.confirm-dialog h2{font-size:1.15rem;letter-spacing:-.02em;margin-bottom:9px}
+.confirm-note{color:var(--muted);font-size:.86rem;line-height:1.5;margin-bottom:12px;white-space:pre-wrap}
+.confirm-detail{max-height:38vh;overflow:auto;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-md);padding:10px;font:.78rem/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;margin-bottom:14px}
+.confirm-dialog .row{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.confirm-dialog .row button{min-height:40px;padding:0 14px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface)}
+.confirm-dialog .row button.danger{color:var(--inverse);background:var(--danger);border-color:transparent;font-weight:650}
+
 /* Tasks — the card line in chat, the sidebar list, and the task bar. A task card is a
    line, not a tile (OpenDuet task-card.tsx): a live glyph and the title, opening the task. */
 .tasks-section{margin:2px 0 8px;border-bottom:1px solid var(--divider);padding-bottom:8px}

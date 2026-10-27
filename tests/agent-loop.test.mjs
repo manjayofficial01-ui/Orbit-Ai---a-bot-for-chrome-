@@ -5,13 +5,13 @@ import {runAgentLoop,execAction,listTabs} from '../dist/agent-run.js';
 const CFG={base:'https://api.test/v1',model:'m',format:'chat',temperature:'',maxTokens:'',tokenField:'max_completion_tokens',effort:'',search:false};
 const fence=o=>'```orbit-actions\n'+JSON.stringify(o)+'\n```';
 
-// Drives runAgentLoop against a scripted Chrome, provider and confirm() so loop control flow is testable outside a browser.
+// Drives runAgentLoop against a scripted Chrome, provider and approval gate so loop control flow is testable outside a browser.
 function harness({tabs,pageUrls,act,cancelAt=-1,throwOnAct=false,replies=[],tabUrls=[],snapshotFailsAfter=Infinity,format='chat',denyOrigins=[],navSequence=[],capturePermissionError=false}){
   // Copy the fixtures: tabs.update mutates the tab record, and the module-level TAB_A/TAB_B must not leak between tests.
   tabs=tabs.map(t=>({...t}));
   const seen={confirms:[],act:[],snapshots:0,bodies:[],events:[],captures:[],updates:[],history:[],requested:[]};
   let replyIndex=0,snapshotIndex=0,tabGetIndex=0,navUrl=null,navCount=0;
-  const originals={chrome:globalThis.chrome,location:globalThis.location,confirm:globalThis.confirm,fetch:globalThis.fetch};
+  const originals={chrome:globalThis.chrome,location:globalThis.location,fetch:globalThis.fetch};
   const page=i=>{const url=pageUrls[Math.min(i,pageUrls.length-1)];return {title:'Page '+url,url,text:'body text',token:'tk-'+url,fields:[{id:'0',label:'Query',kind:'input',length:0,value:''}],interactives:[{ref:'e0',role:'button',name:'Go'}]};};
   globalThis.location={href:'chrome-extension://test/index.html'};
   globalThis.chrome={
@@ -58,7 +58,6 @@ function harness({tabs,pageUrls,act,cancelAt=-1,throwOnAct=false,replies=[],tabU
     },
     permissions:{async request({origins}){seen.requested.push(...origins);return !origins.some(o=>denyOrigins.includes(o));},async contains({origins}){return !origins.some(o=>denyOrigins.includes(o));}}
   };
-  globalThis.confirm=message=>{ seen.confirms.push(message); return seen.confirms.length-1!==cancelAt; };
   globalThis.fetch=async(_url,options)=>{
     const body=JSON.parse(options.body);
     seen.bodies.push(body);
@@ -67,7 +66,8 @@ function harness({tabs,pageUrls,act,cancelAt=-1,throwOnAct=false,replies=[],tabU
   };
   return {
     seen,
-    run:()=>runAgentLoop({cfg:{...CFG,format},key:'k',goal:'do it',onEvent:e=>seen.events.push(e),signal:undefined}),
+    // The gate is injected the way the panel uses the real dialog; window.confirm is never touched.
+    run:(extra={})=>runAgentLoop({cfg:{...CFG,format},key:'k',goal:'do it',onEvent:e=>seen.events.push(e),signal:undefined,approve:async message=>{seen.confirms.push(message);return seen.confirms.length-1!==cancelAt;},...extra}),
     restore(){ for(const [k,v] of Object.entries(originals)){ if(v===undefined) delete globalThis[k]; else globalThis[k]=v; } }
   };
 }
@@ -410,4 +410,23 @@ test('declining all-sites access reports the honest path and does not retry',asy
     assert.equal(h.seen.captures.length,1,'no retry without the grant');
     assert.match(h.seen.bodies.at(-1).messages.at(-1).content,/one-time all-sites access/);
   } finally { h.restore(); }
+});
+
+test('hands-free reading (opt-in) runs read-only steps without the gate',async()=>{
+  const h=harness({tabs:[TAB_A],pageUrls:['https://a.test/one'],replies:[fence({actions:[{tool:'scroll',text:'-300'},{tool:'extract'}]})]});
+  const res=await h.run({autoSafe:true});
+  assert.equal(h.seen.confirms.length,0,'a read-only step must not stop to ask');
+  assert.ok(h.seen.events.some(e=>e.type==='auto-approved'),'the transcript must say the step ran hands-free');
+  assert.ok(h.seen.act.some(a=>a.action.tool==='scroll'),'the scroll still executed');
+  assert.equal(res.done,true);
+});
+test('hands-free reading never skips the gate for a state-changing action',async()=>{
+  const h=harness({tabs:[TAB_A],pageUrls:['https://a.test/one'],replies:[fence({actions:[{tool:'scroll',text:'-300'},{tool:'click',ref:'e0'}]})]});
+  await h.run({autoSafe:true});
+  assert.equal(h.seen.confirms.length,1,'a click must always ask, hands-free or not');
+});
+test('without the opt-in, read-only steps still ask',async()=>{
+  const h=harness({tabs:[TAB_A],pageUrls:['https://a.test/one'],replies:[fence({actions:[{tool:'scroll',text:'-300'},{tool:'extract'}]})]});
+  await h.run({});
+  assert.equal(h.seen.confirms.length,1,'hands-free is opt-in: the default gate asks for every step');
 });
