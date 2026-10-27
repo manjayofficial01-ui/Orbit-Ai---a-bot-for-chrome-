@@ -430,3 +430,16 @@ test('without the opt-in, read-only steps still ask',async()=>{
   await h.run({});
   assert.equal(h.seen.confirms.length,1,'hands-free is opt-in: the default gate asks for every step');
 });
+
+test('autopilot (opt-in) runs a mutating step without the gate',async()=>{
+  const h=harness({tabs:[TAB_A],pageUrls:['https://a.test/one'],replies:[fence({actions:[{tool:'click',ref:'e0'},{tool:'scroll',text:'-300'}]})]});
+  await h.run({autopilot:true});
+  assert.equal(h.seen.confirms.length,0,'autopilot clicks without asking');
+  assert.ok(h.seen.events.some(e=>e.type==='auto-approved'&&/Autopilot/.test(e.text)));
+  assert.ok(h.seen.act.some(a=>a.action.tool==='click'));
+});
+test('autopilot still asks before a form-submitting Enter',async()=>{
+  const h=harness({tabs:[TAB_A],pageUrls:['https://a.test/one'],replies:[fence({actions:[{tool:'click',ref:'e0'},{tool:'press',ref:'e0',text:'Enter'}]})]});
+  await h.run({autopilot:true});
+  assert.equal(h.seen.confirms.length,1,'Enter is the one action autopilot never takes silently');
+});

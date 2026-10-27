@@ -25,7 +25,7 @@ test('every form control has an accessible name',()=>{
 
 test('dialogs and aria-labelledby targets resolve',()=>{
   const dialogs=[...html.matchAll(/<dialog\b([^>]*)>/gi)].map(m=>m.attrs=m[1]);
-  assert.ok(dialogs.length>=3,'expected settings, reach review and context dialogs');
+  assert.ok(dialogs.length>=2,'expected the settings and context dialogs');
   for(const attrs of dialogs){
     const labelledBy=/\baria-labelledby="([^"]+)"/.exec(attrs)?.[1];
     assert.ok(labelledBy,'dialog missing aria-labelledby');

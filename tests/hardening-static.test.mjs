@@ -168,7 +168,7 @@ test('all-sites access stays optional and requestable for captures only',()=>{
 test('creating the first chat never discards the message attachments',()=>{
   assert.match(app,/async function ensureChat\(\)\{let chat=current\(\);if\(chat\)return chat;const keep=structuredClone\(pending\);await newChat\(\);chat=current\(\);pending=keep;renderAttachments\(\);return chat;\}/,
     'ensureChat must snapshot pending before newChat and restore it after');
-  assert.equal([...app.matchAll(/await ensureChat\(\)/g)].length,5,'chat, agent, research, tasks and check-in must all use it');
+  assert.equal([...app.matchAll(/await ensureChat\(\)/g)].length,4,'chat, agent, tasks and check-in must all use it');
   assert.doesNotMatch(app,/if\(!chat\)\{await newChat\(\);chat=current\(\);\}/,'no path may auto-create a chat while dropping pending references');
 });
 
@@ -181,7 +181,8 @@ test('the approval gate survives the side panel: window.confirm is banned from r
   assert.match(agentRun,/export async function askStepApproval/,'the gate is a real dialog');
   assert.match(agentRun,/approve\?approve\(summary\):askStepApproval\(summary\)/,'tests can inject the gate');
   assert.match(agentRun,/autoSafe===true&&allActionsSafeReadOnly/,'hands-free reading is opt-in and read-only');
-  assert.match(app,/autoSafe:cfg\.autoSafeActions===true/,'both run paths honour the setting');
+  assert.match(app,/autoSafe:\(cfg\.autoSafeActions===true\|\|cfg\.autoPilot===true\),autopilot:cfg\.autoPilot===true/,'both run paths honour hands-free and autopilot');
+  assert.match(app,/'saveHistory','smartContext','autoTitle','autoSafeActions','autoPilot'\]/,'both autonomy settings are real persisted fields');
 });
 
 test('full access is an explicit, revocable setting every site gate honours',()=>{
@@ -196,4 +197,10 @@ test('full access is an explicit, revocable setting every site gate honours',()=
   assert.match(app,/permissions\.remove\(\{origins:\['<all_urls>'\]\}\)/,'revoking removes exactly the blanket pattern');
   assert.match(app,/if\(\$\('fullAccess'\)\)\$\('fullAccess'\)\.checked=await hasFullAccess\(\)/,'boot syncs the box from Chrome, not stored state');
   assert.doesNotMatch(manifest,/"permissions":\s*\[[^\]]*all_urls/,'the blanket grant must stay optional, never required');
+});
+
+test('autopilot is opt-in, transcript-announced, and never silent about a submit',()=>{
+  assert.match(agentRun,/autopilot===true&&!enterAhead/,'autopilot runs steps without asking');
+  assert.match(agentRun,/a\.tool==='press'&&a\.text==='Enter'/,'a form-submitting Enter always asks, autopilot or not');
+  assert.match(agentRun,/Autopilot: ran without asking/,'auto-approved steps are announced in the transcript');
 });

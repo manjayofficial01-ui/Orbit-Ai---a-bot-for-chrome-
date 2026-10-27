@@ -10,8 +10,7 @@
     "activeTab",
     "scripting",
     "contextMenus",
-    "tabs",
-    "nativeMessaging"
+    "tabs"
   ],
   "optional_host_permissions": [
     "<all_urls>",

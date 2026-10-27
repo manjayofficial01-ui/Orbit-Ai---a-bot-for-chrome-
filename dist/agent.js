@@ -1,7 +1,7 @@
 // Orbit — supervised browser operator inside a Chrome extension.
 // OpenDuet-era rewrite of the operator prompt and action contract.
 
-export const AGENT_MAX_STEPS = 8;
+export const AGENT_MAX_STEPS = 24;
 export const AGENT_PROTOCOL_RETRIES = 2;
 export const AGENT_SNAPSHOT_TEXT_BUDGET = 12000;
 export const AGENT_ACTION_TEXT_BUDGET = 50000;

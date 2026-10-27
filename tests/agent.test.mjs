@@ -14,7 +14,7 @@ test('ignores normal code fence',()=>{ const r=parseAgentActions('here is code:\
 test('strip fence',()=>{ assert.equal(stripAgentFence('answer\n```orbit-actions\n{}\n```\ntail').includes('orbit-actions'),false); });
 test('describe truncates',()=>{ assert.match(describeActions([{tool:'fill',ref:'0',text:'x'.repeat(500)}]),/500 chars/); });
 test('observation wraps untrusted',()=>{ const o=buildAgentObservation({title:'T',url:'https://a.test/',text:'hello',fields:[{id:'0',label:'Name',kind:'input',length:0}],interactives:[{ref:'e0',role:'button',name:'Go'}]},[{tool:'click',ref:'e0',ok:true}]); assert.match(o,/<untrusted_page>/); assert.match(o,/Editable fields/); });
-test('caps at 8 steps',()=>assert.equal(AGENT_MAX_STEPS,8));
+test('caps at 24 steps',()=>assert.equal(AGENT_MAX_STEPS,24));
 test('v2.3 agentic tools validate correctly',()=>{
   assert.ok(AGENT_TOOLS.includes('extract')&&AGENT_TOOLS.includes('hover')&&AGENT_TOOLS.includes('press')&&AGENT_TOOLS.includes('wait'));
   assert.equal(validateAgentAction({tool:'extract'}),null);

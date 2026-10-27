@@ -72,8 +72,8 @@ test('the removed buttons live in the two menus with their old handlers',()=>{
   assert.match(app,/label:'Attach file',sub:'[^']+',onclick:\(\)=>\$\('fileInput'\)\.click\(\)/);
   assert.match(app,/function openAgentModeMenu\(\)/,'the agent mode menu');
   assert.match(app,/label:'Act on this page',sub:'[^']+',onclick:safe\(runAgent\)/);
-  assert.match(app,/label:'Research with Reach',sub:'[^']+',disabled:!hasText,onclick:safe\(runResearch\)/,'research needs text');
   assert.match(app,/label:'Start as task',sub:'[^']+',disabled:!hasText,onclick:safe\(startTaskFromPrompt\)/,'tasks need text');
+  assert.doesNotMatch(app,/Research with Reach/,'Reach is removed; the agent menu carries only the modes Orbit itself runs');
 });
 
 test('the new surfaces are styled in both themes',()=>{

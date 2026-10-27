@@ -177,7 +177,7 @@ export async function askStepApproval(message) {
   });
 }
 
-export async function runAgentLoop({cfg,key,goal,onEvent,signal,approve,autoSafe=false}){
+export async function runAgentLoop({cfg,key,goal,onEvent,signal,approve,autoSafe=false,autopilot=false}){
   const {tab,tabs}=await resolveAgentTarget();
   pageOrigin(tab.url);
   const fresh=await chrome.tabs.get(tab.id);
@@ -318,7 +318,14 @@ export async function runAgentLoop({cfg,key,goal,onEvent,signal,approve,autoSafe
     // the dialog, and says so in the transcript. Anything that changes the page asks,
     // always — with hands-free off, every step asks, as before.
     let ok;
-    if(autoSafe===true&&allActionsSafeReadOnly(parsed.actions)){
+    // Autopilot (opt-in): run everything on its own except a form-submitting Enter,
+    // which still asks — submitting is the one action this project never takes silently.
+    // Secret and hand-back requests pause by design even under autopilot.
+    const enterAhead=parsed.actions.some(a=>a.tool==='press'&&a.text==='Enter');
+    if(autopilot===true&&!enterAhead){
+      ok=true;
+      onEvent?.({type:'auto-approved',step,text:'Autopilot: ran without asking — '+parsed.actions.map(a=>a.tool).join(', ')});
+    }else if(autoSafe===true&&allActionsSafeReadOnly(parsed.actions)){
       ok=true;
       onEvent?.({type:'auto-approved',step,text:'Read-only step ran without asking (hands-free reading is on): '+parsed.actions.map(a=>a.tool).join(', ')});
     }else{

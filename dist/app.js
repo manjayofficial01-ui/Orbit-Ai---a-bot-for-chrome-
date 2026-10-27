@@ -1,9 +1,6 @@
 import {openPageTools,quickPageReference,captureActiveScreenshot,targetTabs,pageOrigin,hasFullAccess} from './page-access.js';
 import {normalizeBase,hostPattern,generate,generateOnce,imageUserMessage,latestImageTurnIndex,markdown,requestBody} from './core.js';
 import {runAgentLoop,takeSnapshot} from './agent-run.js';
-import {reachStatus} from './reach-client.js';
-import {runResearchLoop} from './research-loop.js';
-import {REACH_LIMITS} from './reach-core.js';
 import {readImageText} from './ocr.js';
 import {SKILLS,parseSlashCommand,routeSkills,replyChips,skillInstructions} from './skills.js';
 import {configureMemory,loadMemories,confirmMemory,forgetMemory,memoryContext} from './memory.js';
@@ -15,8 +12,8 @@ const modLabel=/mac|iphone|ipad/i.test(navigator.userAgentData?.platform||naviga
 const presets={openai:'https://api.openai.com/v1',xai:'https://api.x.ai/v1',google:'https://generativelanguage.googleapis.com/v1beta/openai',openrouter:'https://openrouter.ai/api/v1',ollama:'http://localhost:11434/v1',custom:'https://'};
 // Gemini's OpenAI-compatible layer ignores unrecognised fields, so max_completion_tokens would silently do nothing.
 const presetOverrides={google:{tokenField:'max_tokens'}};
-const defaults={base:presets.openai,model:'',format:'chat',temperature:'',maxTokens:'',tokenField:'max_completion_tokens',effort:'',search:false,xsearch:false,code:false,instructions:'',memory:'',saveHistory:true,smartContext:true,contextDepth:'balanced',autoTitle:true,autoSafeActions:false};
-const fields=['base','model','format','temperature','maxTokens','tokenField','effort','search','xsearch','code','instructions','memory','saveHistory','smartContext','contextDepth','autoTitle','autoSafeActions'];
+const defaults={base:presets.openai,model:'',format:'chat',temperature:'',maxTokens:'',tokenField:'max_completion_tokens',effort:'',search:false,xsearch:false,code:false,instructions:'',memory:'',saveHistory:true,smartContext:true,contextDepth:'balanced',autoTitle:true,autoSafeActions:false,autoPilot:false};
+const fields=['base','model','format','temperature','maxTokens','tokenField','effort','search','xsearch','code','instructions','memory','saveHistory','smartContext','contextDepth','autoTitle','autoSafeActions','autoPilot'];
 let state={chats:[],current:'',provider:'openai',profiles:{},theme:'system',fontSize:'medium',recentChats:[],recentIndex:-1,tasks:[],checkin:{lastRunAt:0,hidden:[],suggestions:[]}},keys={},modelCache={},busy=false,controller,ownsWorkspace=false,releaseLock,pending=[],preview,selectionId,saveQueue=Promise.resolve(),storageWritable=true;
 let memoriesCache=[];
 let ui={navHidden:false,sidebarWidth:272};
@@ -50,7 +47,7 @@ function drawMessage(m,index){
   if(m.activity?.length){
     const activity=element('details',undefined,'research-activity');
     activity.open=m.state==='streaming';
-    activity.append(element('summary',`Reach activity · ${m.researchCalls||0}/${REACH_LIMITS.calls} proposed calls`));
+    activity.append(element('summary','Run activity'));
     const list=element('ol');
     for(const line of m.activity.slice(-30))list.append(element('li',line));
     activity.append(list);article.append(activity);
@@ -215,7 +212,7 @@ async function runTask(task,{cfg,key}){
   try{
     await save();
     say('Task started. Consequential steps still ask you first; Stop is available.');
-    const res=await runAgentLoop({cfg,key,goal:taskBrief(task.ask),signal:controller.signal,autoSafe:cfg.autoSafeActions===true,onEvent:e=>{
+    const res=await runAgentLoop({cfg,key,goal:taskBrief(task.ask),signal:controller.signal,autoSafe:(cfg.autoSafeActions===true||cfg.autoPilot===true),autopilot:cfg.autoPilot===true,onEvent:e=>{
       if(e.type==='needs-input'){task.needsInput=true;task.updated=Date.now();renderTasks();renderTaskBar();}
       if(e.type==='invalid'){say('Step rejected: '+String(e.text||'').slice(0,300));return;}
       const line='['+e.type+' · step '+e.step+'] '+String(e.text||'').slice(0,800);
@@ -391,10 +388,10 @@ async function testConnection(){
 }
 function fillModels(models,selected=''){const select=$('modelSelect'),list=$('modelList');select.replaceChildren();list.replaceChildren();const blank=element('option',models.length?'Choose a discovered model':'Fetch models or enter an ID');blank.value='';select.append(blank);for(const id of models){const o=element('option',id);o.value=id;select.append(o);const d=element('option');d.value=id;list.append(d);}if(selected&&models.includes(selected))select.value=selected;}
 function loadProfile(id){const p={...defaults,...(presetOverrides[id]||{}),base:presets[id],...state.profiles[id]};for(const f of fields){const el=$(f);if(!el)continue;if(typeof p[f]==='boolean')el.checked=p[f];else el.value=p[f]??'';}$('key').value='';const saved=keyFor(p.base);$('key').placeholder=saved?'Saved key ••••••••':'Enter once and save';$('keyHint').textContent=saved?'A key is saved for this endpoint. Leave blank to keep it.':'No key saved for this endpoint.';fillModels(modelCache[p.base]||[],p.model);$('settingsStatus').textContent='';}
-function readConfig(){const c={};for(const f of fields){const el=$(f);if(!el)continue;c[f]=['search','xsearch','code','saveHistory','smartContext','autoTitle','autoSafeActions'].includes(f)?el.checked:el.value.trim();}c.base=normalizeBase(c.base);return c;}
+function readConfig(){const c={};for(const f of fields){const el=$(f);if(!el)continue;c[f]=['search','xsearch','code','saveHistory','smartContext','autoTitle','autoSafeActions','autoPilot'].includes(f)?el.checked:el.value.trim();}c.base=normalizeBase(c.base);return c;}
 async function grant(c){const ok=await chrome.permissions.request({origins:[hostPattern(c.base)]});if(!ok)throw Error('Provider access was not granted.');}
 async function discoverModels({quiet=false}={}){const c=readConfig();await grant(c);$('settingsStatus').textContent='Fetching the model list…';const entered=$('key').value.trim(),key=entered||keyFor(c.base),response=await fetch(c.base+'/models',{headers:key?{Authorization:'Bearer '+key}:{},credentials:'omit',redirect:'error',referrerPolicy:'no-referrer',signal:AbortSignal.timeout(20000)});if(!response.ok)throw Error(`Model list unavailable (HTTP ${response.status}). That is only the list endpoint — your model can still work. Set the model ID and press Test connection.`);const text=await response.text();if(text.length>2000000)throw Error('Model list too large.');const data=JSON.parse(text),models=[...new Set((Array.isArray(data)?data:data.data||data.models||[]).map(x=>typeof x==='string'?x:x?.id||x?.name).filter(Boolean))].slice(0,4000).sort();if(!models.length)throw Error('The provider returned no recognizable model IDs. That is only the list endpoint — set the model ID and press Test connection.');modelCache[c.base]=models;fillModels(models,c.model);if(!c.model){$('model').value=models[0];$('modelSelect').value=models[0];}$('settingsStatus').textContent=`Listed ${models.length} model${models.length===1?'':'s'}. Listing only proves the endpoint answers — press Test connection to check a model actually generates.`;if(!quiet)await writeLocal({orbitModels:modelCache});return models;}
-function openSettings(tab='connection'){$('provider').value=state.provider;loadProfile(state.provider);showSettingsTab(tab);renderMemories();$('settingsDialog').showModal();setTimeout(()=>$(tab==='connection'?'base':tab==='reach'?'reachCheck':tab==='context'?'smartContext':'settingsForm').focus?.(),50);}
+function openSettings(tab='connection'){$('provider').value=state.provider;loadProfile(state.provider);showSettingsTab(tab);renderMemories();$('settingsDialog').showModal();setTimeout(()=>$(tab==='connection'?'base':tab==='context'?'smartContext':'settingsForm').focus?.(),50);}
 function showSettingsTab(name){for(const b of document.querySelectorAll('[data-settings-tab]'))b.classList.toggle('active',b.dataset.settingsTab===name);for(const p of document.querySelectorAll('[data-settings-panel]'))p.hidden=p.dataset.settingsPanel!==name;}
 $('settings').onclick=()=>openSettings();$('closeSettings').onclick=$('cancelSettings').onclick=()=>$('settingsDialog').close();for(const b of document.querySelectorAll('[data-settings-tab]'))b.onclick=()=>showSettingsTab(b.dataset.settingsTab);$('provider').onchange=()=>loadProfile($('provider').value);$('base').onchange=safe(async()=>{const base=normalizeBase($('base').value);const saved=keyFor(base);$('key').value='';$('key').placeholder=saved?'Saved key ••••••••':'Enter once and save';fillModels(modelCache[base]||[],$('model').value);if(saved||isLoopback(base))discoverModels({quiet:true}).catch(e=>{$('settingsStatus').textContent=e.message;});});$('modelSelect').onchange=()=>{if($('modelSelect').value)$('model').value=$('modelSelect').value;};$('model').oninput=()=>{if([...$('modelSelect').options].some(o=>o.value===$('model').value))$('modelSelect').value=$('model').value;else $('modelSelect').value='';};$('toggleKey').onclick=()=>{const reveal=$('key').type==='password';$('key').type=reveal?'text':'password';$('toggleKey').textContent=reveal?'Hide':'Show';};$('models').onclick=safe(()=>discoverModels());$('testModel').onclick=safe(testConnection);
 $('settingsForm').onsubmit=safe(async event=>{event.preventDefault();const c=readConfig();requestBody(c,[{role:'user',content:'Connection validation'}]);await grant(c);const entered=$('key').value.trim(),oldBase=state.profiles[$('provider').value]?.base;if(entered)keys[c.base]=entered;if(oldBase&&oldBase!==c.base&&keys[oldBase]&&!entered)keys[c.base]=keys[oldBase];if(!keyFor(c.base)&&!isLoopback(c.base))throw Error('Enter an API key, or restore the saved endpoint that already has one.');state.provider=$('provider').value;state.profiles[state.provider]=c;state.fontSize=document.documentElement.dataset.font||state.fontSize;await save();connection();$('settingsDialog').close();status(storageWritable?'Connection saved. Your local key will be reused after restart.':'Connection applies to this session only — local storage is unavailable, so nothing was persisted and the key will be lost when this panel closes.');});
@@ -430,112 +427,15 @@ $('contextNote').textContent=shot?'This is the image Orbit actually captured. No
 $('contextPreview').rows=shot?5:14;
 $('contextPreview').value=shot?`Screenshot of ${ref.title}\n${ref.url||''}\n\n${ref.dataUrl.length.toLocaleString()} characters of image data captured. Sent as image data to providers that accept it, or read into editable text with the OCR button below.`:(ref.url?ref.url+'\n\n':'')+ref.text;
 $('contextPreview').readOnly=shot;$('contextDialog').showModal();}
-let reachReviewResolve;
-function settleReachReview(approved){
-  const resolve=reachReviewResolve;reachReviewResolve=null;
-  if($('reachReviewDialog').open)$('reachReviewDialog').close();
-  resolve?.(approved);
-}
-function reviewReachRequest(request){
-  if(reachReviewResolve)return Promise.resolve(false);
-  $('reachReviewOperation').textContent=request.op==='search'?'Search':'Read';
-  $('reachReviewChannel').textContent=request.channel||'Automatic public URL reader';
-  $('reachReviewRequest').textContent=request.op==='search'?`Query: ${request.query}\nResult limit: ${request.limit}`:`URL: ${request.target}`;
-  $('reachReviewError').textContent='';
-  return new Promise(resolve=>{reachReviewResolve=resolve;$('reachReviewDialog').showModal();});
-}
-$('reachApprove').onclick=()=>settleReachReview(true);
-$('reachDecline').onclick=()=>settleReachReview(false);
-$('reachReviewDialog').addEventListener('cancel',event=>{event.preventDefault();settleReachReview(false);});
-$('reachReviewDialog').addEventListener('close',()=>settleReachReview(false));
-$('reachStop').onclick=()=>{controller?.abort();settleReachReview(false);};
-async function refreshReachStatus(){
-  if(busy)return;
-  const button=$('reachCheck');button.disabled=true;
-  $('reachStatus').textContent='Reading declared Agent Reach capabilities…';
-  try{
-    const declared=await reachStatus({timeoutMs:25000});
-    const list=element('ul',undefined,'reach-capabilities');
-    if(!declared.channels.length)list.append(element('li','Agent Reach reported no search/read capabilities.'));
-    for(const channel of declared.channels){
-      const item=element('li');
-      item.append(element('strong',channel.name));
-      const actions=channel.actions.map(action=>`${action.name}${action.backends.length?` (${action.backends.join(', ')})`:''}`).join(', ');
-      const login=channel.login?` Login: ${channel.login.via}${channel.login.logged_in===true?' (logged in)':channel.login.logged_in===false?' (not logged in)':' (state not reported)'}.`:'';
-      item.append(document.createTextNode(` — ${actions}. ${channel.description}${channel.level?` Declared level: ${channel.level}.`:''}${login}`));
-      list.append(item);
-    }
-    $('reachCapabilities').replaceChildren(list);
-    $('reachStatus').textContent='Declared capabilities refreshed. This is not a connectivity or login-health check.';
-  }catch(error){
-    $('reachStatus').textContent='Could not read declared Agent Reach capabilities.';
-    throw error;
-  }finally{button.disabled=false;}
-}
-$('reachCheck').onclick=safe(refreshReachStatus);
-const reachWindowsHost=/win/i.test(navigator.userAgentData?.platform||navigator.platform||'');
-$('reachInstallCommand').textContent=`${reachWindowsHost?'py -3':'python3'} native-host${reachWindowsHost?'\\':'/'}install.py --extension-id ${chrome.runtime.id}`;
-$('reachCopyInstall').onclick=safe(async()=>{await navigator.clipboard.writeText($('reachInstallCommand').textContent);$('reachStatus').textContent='Installer command copied.';});
 
-async function runResearch(){
-  if(busy||!ownsWorkspace)return;
-  const goal=$('prompt').value.trim();
-  if(!goal)throw Error('Enter a research question first.');
-  const cfg={...config(),search:false};cfg.base=normalizeBase(cfg.base);
-  if(!cfg.model)throw Error('Open Settings and choose a model.');
-  if(!await chrome.permissions.contains({origins:[hostPattern(cfg.base)]}))throw Error('Open Settings and grant provider access.');
-  const key=keyFor(cfg.base);if(!key&&!isLoopback(cfg.base))throw Error('Open Settings and save your API key once.');
-  let chat=await ensureChat();
-  const user={role:'user',content:'[research] '+goal,refs:structuredClone(pending)};
-  chat.messages.push(user);
-  let messages;
-  try{messages=buildMessages(chat).filter(m=>m.role!=='system');requestBody(cfg,messages);}catch(error){chat.messages.pop();throw error;}
-  $('prompt').value='';growPrompt();pending=[];
-  if(chat.title==='New conversation')chat.title=('Research: '+goal).slice(0,58);
-  const answer={role:'assistant',content:'',state:'streaming',sources:[],activity:[],researchCalls:0};
-  chat.messages.push(answer);busy=true;controller=new AbortController();controls();render();
-  const timer=setTimeout(()=>controller.abort(),600000);
-  const clearPresenceResearch=presenceWatch();
-  const say=line=>{
-    const text=String(line||'').slice(0,1200);if(!text)return;
-    answer.activity.push(text);answer.activity=answer.activity.slice(-30);
-    renderMessages();$('messages').scrollTop=$('messages').scrollHeight;
-  };
-  try{
-    await save();
-    say(`Research started. At most ${REACH_LIMITS.calls} proposed Reach calls; every actual search/read requires review. Stop is available throughout.`);
-    const result=await runResearchLoop({
-      cfg,key,messages,signal:controller.signal,confirm:reviewReachRequest,
-      onEvent:event=>{
-        if(Number.isInteger(event.proposed))answer.researchCalls=event.proposed;
-        else if(Number.isInteger(event.calls))answer.researchCalls=event.calls;
-        if(event.type==='answer'){status('Finalizing research answer…');return;}
-        let text=String(event.text||'').slice(0,800);
-        if(event.request)text+=event.request.op==='search'?` Query: ${event.request.query}`:` URL: ${event.request.target}`;
-        say(text);status(text);
-      }
-    });
-    answer.content=result.text;answer.sources=result.sources;answer.researchCalls=result.calls;answer.researchTrace=result.trace;
-    answer.state='complete';status(`Research complete · ${result.calls}/${REACH_LIMITS.calls} proposed calls · ${result.sources.length} observed sources.`);
-  }catch(error){
-    const stopped=controller?.signal.aborted||error.name==='AbortError'||error.code==='CANCELLED';
-    answer.state=stopped?'interrupted':'failed';
-    answer.content=stopped?'Research stopped before a final answer.':`Research failed: ${error.message}${error.hint?` ${error.hint}`:''}`;
-    say(stopped?'Research stopped; no further Reach call was approved.':`Research error: ${error.message}${error.hint?` ${error.hint}`:''}`);
-    status(stopped?'Stopped. Research activity retained.':error.message);
-  }finally{
-    clearTimeout(timer);clearPresenceResearch();settleReachReview(false);busy=false;controller=null;controls();render();await save();
-  }
-}
-
-async function runAgent(){if(busy||!ownsWorkspace)return;const cfg=config();cfg.base=normalizeBase(cfg.base);if(!cfg.model)throw Error('Open Settings and choose a model.');if(!await chrome.permissions.contains({origins:[hostPattern(cfg.base)]}))throw Error('Grant provider access in Settings.');const key=keyFor(cfg.base);if(!key&&!isLoopback(cfg.base))throw Error('Save your API key in Settings.');let chat=await ensureChat();const goal=$('prompt').value.trim()||'Read the active webpage and explain what you can do there.',user={role:'user',content:'[agent] '+goal,refs:structuredClone(pending)};chat.messages.push(user);try{requestBody(cfg,buildMessages(chat));}catch(e){chat.messages.pop();throw e;}$('prompt').value='';growPrompt();pending=[];if(chat.title==='New conversation')chat.title=goal.slice(0,58);const answer={role:'assistant',content:'',state:'streaming',sources:[]};chat.messages.push(answer);busy=true;controller=new AbortController();controls();render();const clearPresenceAgent=presenceWatch();const say=line=>{answer.content+=(answer.content?'\n':'')+line;renderMessages();$('messages').scrollTop=$('messages').scrollHeight;};try{await save();say('Agent started. You can stop at any time; consequential actions require review.');const res=await runAgentLoop({cfg,key,goal,onEvent:e=>{const line=`[${e.type} · step ${e.step}] ${String(e.text||'').slice(0,800)}`;say(line);status(line.slice(0,200));},signal:controller.signal,autoSafe:cfg.autoSafeActions===true});for(const line of res.transcript||[])say(line);if(res.hitLimit)say('Step limit reached. Ask a narrower follow-up to continue.');if(res.cancelled)say('Stopped at your request.');answer.state='complete';status('Agent done.');}catch(e){answer.state=controller?.signal.aborted?'interrupted':'failed';say('Agent error: '+e.message);status(controller?.signal.aborted?'Stopped. Partial output retained.':e.message);}finally{clearPresenceAgent();busy=false;controller=null;controls();renderMessages();await save();}}
+async function runAgent(){if(busy||!ownsWorkspace)return;const cfg=config();cfg.base=normalizeBase(cfg.base);if(!cfg.model)throw Error('Open Settings and choose a model.');if(!await chrome.permissions.contains({origins:[hostPattern(cfg.base)]}))throw Error('Grant provider access in Settings.');const key=keyFor(cfg.base);if(!key&&!isLoopback(cfg.base))throw Error('Save your API key in Settings.');let chat=await ensureChat();const goal=$('prompt').value.trim()||'Read the active webpage and explain what you can do there.',user={role:'user',content:'[agent] '+goal,refs:structuredClone(pending)};chat.messages.push(user);try{requestBody(cfg,buildMessages(chat));}catch(e){chat.messages.pop();throw e;}$('prompt').value='';growPrompt();pending=[];if(chat.title==='New conversation')chat.title=goal.slice(0,58);const answer={role:'assistant',content:'',state:'streaming',sources:[]};chat.messages.push(answer);busy=true;controller=new AbortController();controls();render();const clearPresenceAgent=presenceWatch();const say=line=>{answer.content+=(answer.content?'\n':'')+line;renderMessages();$('messages').scrollTop=$('messages').scrollHeight;};try{await save();say('Agent started. You can stop at any time; consequential actions require review.');const res=await runAgentLoop({cfg,key,goal,onEvent:e=>{const line=`[${e.type} · step ${e.step}] ${String(e.text||'').slice(0,800)}`;say(line);status(line.slice(0,200));},signal:controller.signal,autoSafe:(cfg.autoSafeActions===true||cfg.autoPilot===true),autopilot:cfg.autoPilot===true});for(const line of res.transcript||[])say(line);if(res.hitLimit)say('Step limit reached. Ask a narrower follow-up to continue.');if(res.cancelled)say('Stopped at your request.');answer.state='complete';status('Agent done.');}catch(e){answer.state=controller?.signal.aborted?'interrupted':'failed';say('Agent error: '+e.message);status(controller?.signal.aborted?'Stopped. Partial output retained.':e.message);}finally{clearPresenceAgent();busy=false;controller=null;controls();renderMessages();await save();}}
 $('attach').onclick=safe(()=>{if(document.querySelector('.composer-menu')){closeComposerMenus();return;}openAttachMenu();});
 $('agentMode').onclick=safe(()=>{if(document.querySelector('.composer-menu')){closeComposerMenus();return;}openAgentModeMenu();});
 $('agent').onclick=safe(runAgent);$('checkin').onclick=safe(runCheckin);
 // ---------------------------------------------------------------------------
 // Composer menus. One "+" button opens everything that attaches context (page,
 // screenshot, file, skills); the Agent button's caret picks how a run executes
-// (agent now, Reach research, or a task). The menus are fixed-position bubbles
+// (agent now, or a task). The menus are fixed-position bubbles
 // anchored above the button that opened them, so they work in the panel, the
 // float window and narrow widths alike.
 // ---------------------------------------------------------------------------
@@ -571,7 +471,6 @@ function openAgentModeMenu(){
   const hasText=!!$('prompt').value.trim();
   const menu=composerMenu($('agentMode'));
   menuItem(menu,{label:'Act on this page',sub:'The supervised agent works step by step on the live tab',onclick:safe(runAgent)});
-  menuItem(menu,{label:'Research with Reach',sub:'Bounded web research; every search or read needs your OK',disabled:!hasText,onclick:safe(runResearch)});
   menuItem(menu,{label:'Start as task',sub:'Runs in its own conversation; this chat keeps a card',disabled:!hasText,onclick:safe(startTaskFromPrompt)});
   if(!hasText)menu.append(element('p','Research and tasks need something to do — type it first. Acting on the page works without text.','skills-menu-hint'));
 }
@@ -608,8 +507,16 @@ $('style').onchange=safe(async()=>{state.style=$('style').value;await save();});
 $('fullAccess').onchange=safe(async()=>{
   const box=$('fullAccess');
   if(box.checked){
-    let ok=false;try{ok=await chrome.permissions.request({origins:['<all_urls>']});}catch{}
-    if(!ok){box.checked=false;throw Error('Chrome did not grant all-site access, so per-site prompts stay in use.');}
+    // The request is the FIRST thing after reading the box: Chrome only honours a
+    // permissions prompt fired inside the user gesture, and an await before it can
+    // break that chain. Chrome can also suppress the prompt while an extension surface
+    // is open — the error names the always-works manual path (chrome://extensions).
+    let ok=false,threw=null;
+    try{ok=await chrome.permissions.request({origins:['<all_urls>']});}catch(e){threw=e;}
+    if(!ok){
+      box.checked=false;
+      throw Error('Chrome did not show the all-sites prompt'+(threw?' ('+String(threw.message||threw).slice(0,120)+')':'')+'. Grant it manually: chrome://extensions → Orbit → Details → Site access → On all sites — the checkbox syncs on the next boot.');
+    }
     status('Full access granted — Orbit can read and act on any site. Action approvals still apply.');
   }else{
     try{await chrome.permissions.remove({origins:['<all_urls>']});}catch{}

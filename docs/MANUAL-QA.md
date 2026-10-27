@@ -167,3 +167,13 @@ Covered by `npm test` (233 extension + 12 native) for the gate logic; in real Ch
 81. Toggle Full access OFF: confirm the checkbox clears, and the next agent goto to an ungranted site shows the per-site Chrome prompt again. Also confirm chrome://extensions → Orbit → Site access no longer lists the blanket "on all sites" entry.
 82. Revoke from Chrome's side instead (chrome://extensions → Orbit → Site access → remove all), reopen Orbit: the Full access checkbox must boot OFF (Chrome is the source of truth).
 83. With full access ON, run What's new with several sites open: every open page is checked (the "Open but not granted" skip note should not appear for normal sites).
+
+## Cycle 16 — Reach removed, Autopilot, full-access grant (2026-10-28)
+
+Covered by `npm test` (210 extension) for the wiring; in real Chrome:
+
+84. Confirm Reach is gone: the Agent caret menu lists only Act on this page and Start as task; Settings has no Reach tab; no permission prompt ever mentions native messaging. Old conversations with research answers still render (as "Run activity").
+85. Settings → Context → **Autopilot** (off by default): with it ON, run "search this page for the cheapest product and note its price" via Agent — steps run with no dialogs and the transcript shows "[auto-approved · step N] Autopilot: ran without asking — click, scroll". The moment the model proposes Enter, the approval dialog appears with the submit warning.
+86. With Autopilot ON, a step needing a password still shows the masked secret box, and a sign-in still shows the hand-back dialog — those pauses are the ask.
+87. **Full access grant**: toggle it ON in the side panel. If Chrome's prompt appears, accept. If nothing appears, read the error — it names chrome://extensions → Orbit → Details → Site access → On all sites; do that, reopen Orbit, and confirm the checkbox boots checked. Then run an agent task across two never-visited sites with no per-site prompt.
+88. Toggle Full access OFF: confirm the next goto to an ungranted site asks Chrome's per-site prompt again, and that action approvals behave exactly as in 85-86 regardless.

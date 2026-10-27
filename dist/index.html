@@ -63,7 +63,7 @@
           <textarea id="prompt" rows="1" placeholder="Ask about this page, research, write, or automate…" aria-label="Message"></textarea>
           <span class="agent-split" role="group" aria-label="Agent modes">
             <button id="agent" class="agent-main" title="Run Orbit's supervised agent on the live page: it proposes steps, you approve each one">Agent</button>
-            <button id="agentMode" class="icon agent-caret" aria-label="Other ways to run this: Research with Reach, or start a Task" aria-haspopup="menu" title="Research with Reach · Start as task">▾</button>
+            <button id="agentMode" class="icon agent-caret" aria-label="Other ways to run this: start a Task" aria-haspopup="menu" title="Start as task">▾</button>
           </span>
           <button id="send" class="primary composer-send" aria-label="Send message" title="Send (Enter)">↑</button>
           <button id="stop" class="composer-send stop-btn" hidden>Stop</button>
@@ -77,7 +77,7 @@
 <dialog id="settingsDialog" class="settings-dialog" aria-labelledby="settingsTitle">
 <form id="settingsForm">
   <div class="dialog-head"><div><span class="eyebrow">Workspace settings</span><h2 id="settingsTitle">Connect your provider</h2></div><button type="button" id="closeSettings" class="icon" aria-label="Close settings">×</button></div>
-  <nav class="settings-tabs" aria-label="Settings sections"><button type="button" data-settings-tab="connection" class="active">Connection</button><button type="button" data-settings-tab="reach">Reach</button><button type="button" data-settings-tab="context">Context</button><button type="button" data-settings-tab="appearance">Appearance</button><button type="button" data-settings-tab="advanced">Advanced</button></nav>
+  <nav class="settings-tabs" aria-label="Settings sections"><button type="button" data-settings-tab="connection" class="active">Connection</button><button type="button" data-settings-tab="context">Context</button><button type="button" data-settings-tab="appearance">Appearance</button><button type="button" data-settings-tab="advanced">Advanced</button></nav>
   <section data-settings-panel="connection">
     <p class="section-note">Your key stays on this device. Orbit reuses it after restart until you remove it.</p>
     <div class="form-grid two"><label>Provider profile<select id="provider"><option value="openai">OpenAI</option><option value="xai">xAI / Grok</option><option value="google">Google Gemini</option><option value="openrouter">OpenRouter</option><option value="ollama">Ollama local</option><option value="custom">Custom compatible</option></select></label><label>API format<select id="format"><option value="chat">Chat Completions</option><option value="responses">Responses</option></select></label></div>
@@ -87,21 +87,13 @@
     <div class="row"><button type="button" id="models">Fetch models</button><button type="button" id="testModel" class="primary">Test connection</button><button type="button" id="revoke">Forget key & revoke access</button></div>
           <p class="section-note">Fetching the list and testing a model are separate on purpose: a provider can refuse <code>/models</code> while your chosen model answers fine, and a listed model is not proof it generates. Testing sends one small live request to the model named above and may cost a fraction of a cent.</p>
   </section>
-  <section data-settings-panel="reach" hidden>
-    <p class="section-note"><strong>Supervised local research.</strong> Orbit can ask Agent Reach to search or read, but every proposed network call requires your review. Provider-hosted web search is disabled during Reach research.</p>
-    <p class="section-note">Install Agent Reach separately, then run this per-user command from the Orbit project folder. The installer registers only this exact extension ID with the native host; no administrator token or browser credential is requested.</p>
-    <code id="reachInstallCommand" class="reach-install-command"></code>
-    <div class="row"><button type="button" id="reachCopyInstall">Copy installer command</button><button type="button" id="reachCheck" class="primary">Refresh declared capabilities</button></div>
-    <div id="reachStatus" role="status" aria-live="polite">Declared capabilities have not been read in this panel.</div>
-    <div id="reachCapabilities" role="group" aria-label="Declared Agent Reach capabilities"></div>
-    <p class="section-note">Capability metadata is not a connectivity, account, or login-health check. Never enter API keys, cookies, passwords, or account tokens here. Orbit sends no provider credentials to Agent Reach.</p>
-  </section>
   <section data-settings-panel="context" hidden>
-    <label class="check"><input id="fullAccess" type="checkbox"> <span><strong>Full access — all sites</strong><small>Grant Orbit every website at once: the agent, page context, fetches, screenshots and What's new then work on any site without a per-site prompt. Chrome shows one prompt for this. Turning it off removes the blanket grant (per-site approvals you already made stay; Reset in Advanced clears everything). Orbit's own action approvals are separate and always apply.</small></span></label>
+    <label class="check"><input id="fullAccess" type="checkbox"> <span><strong>Full access — all sites</strong><small>Grant Orbit every website at once: the agent, page context, fetches, screenshots and What's new then work on any site without a per-site prompt. Chrome shows one prompt for this. Turning it off removes the blanket grant (per-site approvals you already made stay; Reset in Advanced clears everything). Orbit's own action approvals are separate and always apply. If Chrome's prompt does not appear, grant it manually: chrome://extensions → Orbit → Details → Site access → On all sites.</small></span></label>
     <label class="check"><input id="smartContext" type="checkbox"> <span><strong>Smart page context</strong><small>Attach a fresh, privacy-filtered snapshot of the active tab to every message automatically — until you attach something else or turn this off. Chrome asks once per site for access.</small></span></label>
     <label>Context depth<select id="contextDepth"><option value="focused">Focused · selection or visible essentials</option><option value="balanced">Balanced · main page text</option><option value="deep">Deep · larger page snapshot</option></select></label>
     <label class="check"><input id="autoTitle" type="checkbox"> <span><strong>Smart conversation titles</strong><small>Create concise local titles from your first request.</small></span></label>
     <label class="check"><input id="autoSafeActions" type="checkbox"> <span><strong>Hands-free reading</strong><small>Read-only agent steps — snapshots, extracts, scrolling, hovering, waits, workspace reads — run without asking, so the agent can look around on its own. Anything that changes the page (clicks, typing, navigation, writes, requests) always waits for your approval.</small></span></label>
+<label class="check"><input id="autoPilot" type="checkbox"> <span><strong>Autopilot (experimental)</strong><small>Run the whole agent without per-step approvals: clicks, typing, navigation and writes all execute on their own. Only a form-submitting Enter still asks, and secret/hand-back pauses always appear. Watch it work; Stop is always available.</small></span></label>
     <label>Assistant style<select id="style" aria-label="Assistant style"><option>Balanced</option><option>Analyst</option><option>Code</option><option>Creative</option></select><small>Shapes how Orbit answers. Saved with your settings.</small></label>
     <p class="section-note">Page context is opt-in and only sent when you submit a message. Agent and research runs propose steps; every consequential step waits for your approval.</p>
     <label>Custom instructions<textarea id="instructions" rows="4" maxlength="8000" placeholder="How Orbit should respond"></textarea></label>
@@ -128,15 +120,6 @@
 </form>
 </dialog>
 
-<dialog id="reachReviewDialog" aria-labelledby="reachReviewTitle">
-  <div class="dialog-head"><div><span class="eyebrow">Review before network access</span><h2 id="reachReviewTitle">Approve this Agent Reach call?</h2></div></div>
-  <p>Approval applies only to the request shown below. Declining makes no network request and uses one of the four proposed-call slots.</p>
-  <dl class="reach-review"><dt>Operation</dt><dd id="reachReviewOperation"></dd><dt>Channel</dt><dd id="reachReviewChannel"></dd></dl>
-  <pre id="reachReviewRequest" role="region" aria-label="Exact Agent Reach request"></pre>
-  <p class="section-note">Search results and webpage text are untrusted. Agent Reach may use its own locally configured accounts, but Orbit never sends it your provider key.</p>
-  <p id="reachReviewError" role="alert"></p>
-  <div class="dialog-actions"><button type="button" id="reachStop" class="danger">Stop research</button><span class="spacer"></span><button type="button" id="reachDecline">Decline</button><button type="button" id="reachApprove" class="primary">Approve this call</button></div>
-</dialog>
 <dialog id="contextDialog" aria-labelledby="contextTitle"><div class="dialog-head"><div><span class="eyebrow">Review before sharing</span><h2 id="contextTitle">Page context</h2></div><button id="cancelContextTop" class="icon" aria-label="Close">×</button></div><p id="contextNote">Webpage text is untrusted and is sent only when you submit your message.</p><img id="shotPreview" alt="" hidden><textarea id="contextPreview" rows="14" aria-label="Reference preview"></textarea><div class="row end"><button id="cancelContext">Cancel</button><button type="button" id="ocrShot" hidden>Read text (OCR)</button><button id="analyzeShot" class="primary" hidden>Analyze now</button><button id="attach">Attach reference</button></div></dialog>
 <script type="module" src="app.js"></script>
 </body></html>
