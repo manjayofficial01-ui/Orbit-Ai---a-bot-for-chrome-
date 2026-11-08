@@ -11,7 +11,7 @@ import {PRESENCE_LABEL,normalizeRoster,activePersona,findPersona,addPersona,upda
 import {configureCards,askCard,makeCard,settleCard,isSettled,buildCardElement,cardOutcome} from './cards.js';
 import {plainSpeech,speechAvailable,speak,stopSpeaking,voices} from './voice.js';
 import {ROUTINE_LIMITS,normalizeRoutines,addRoutine,updateRoutine,removeRoutine,nextRunAt,dueRoutines,markRun,describeSchedule,describeNextRun,alarmName} from './routines.js';
-import {buildResearchPrompt,buildAnalysisPrompt,buildSynthesisPrompt,selectResearchers} from './research.js';
+import {buildResearchPrompt,buildAnalysisPrompt,buildSynthesisPrompt,selectResearchers,arenaAnswerFingerprint} from './research.js';
 const $=id=>document.getElementById(id);
 const modLabel=/mac|iphone|ipad/i.test(navigator.userAgentData?.platform||navigator.platform||'')?'⌘':'Ctrl';
 const presets={openai:'https://api.openai.com/v1',xai:'https://api.x.ai/v1',google:'https://generativelanguage.googleapis.com/v1beta/openai',openrouter:'https://openrouter.ai/api/v1',ollama:'http://localhost:11434/v1',arena:'https://arena.ai',custom:'https://'};
@@ -186,8 +186,12 @@ async function ensureArenaSignedIn({signal,card=true,say=status}={}){
 // the same page.
 // ---------------------------------------------------------------------------
 const ARENA_DOCK_PREVIEW_CHARS=600;
-const ARENA_DOCK_LABEL={idle:'Not connected','signed-in':'Signed in','signed-out':'Signed out',waiting:'Waiting for you to sign in',generating:'Generating…',done:'Answer ready',failed:'Failed'};
+const ARENA_DOCK_LABEL={idle:'Not connected','signed-in':'Signed in','signed-out':'Signed out',waiting:'Waiting for you to sign in',generating:'Generating…',done:'Answer ready','new-answer':'New answer ready — pull it in',failed:'Failed'};
 const arenaDockState={phase:'idle',model:'',preview:'',error:''};
+// The fingerprint of the last Arena answer Orbit actually ingested. When the relay tab
+// shows a different one — whether Orbit sent that request or the person typed it
+// themselves — the dock offers to pull it in. That is the proactive half of the flow.
+let arenaLastAnswerFp='';
 function arenaDockSet(phase,{model,preview,error}={}){
   if(!Object.prototype.hasOwnProperty.call(ARENA_DOCK_LABEL,phase))return;
   arenaDockState.phase=phase;
@@ -204,7 +208,7 @@ function renderArenaDock(){
   $('arenaDockStatus').textContent=ARENA_DOCK_LABEL[arenaDockState.phase]||'…';
   $('arenaDockModel').textContent=arenaDockState.model?' · '+arenaDockState.model:'';
   const body=$('arenaDockBody');
-  body.hidden=ui.arenaDockCollapsed===true;
+  body.hidden=ui.arenaDockCollapsed===true&&arenaDockState.phase!=='new-answer';
   $('arenaDockHead').setAttribute('aria-expanded',String(!body.hidden));
   $('arenaDockPreview').textContent=arenaDockState.preview||arenaDockState.error||'Nothing from Arena yet. Research with Arena — or chat while Arena is your provider — and the answer shows up here.';
 }
@@ -219,11 +223,15 @@ async function arenaDockPoll(){
   try{granted=await chrome.permissions.contains({origins:[hostPattern(presets.arena)]});}catch{}
   if(!granted){arenaDockSet('idle',{error:'Arena is not granted yet — press Connect Arena…'});return;}
   try{
-    const {arenaAuthPeek}=await import('./arena.js');
-    const st=await arenaAuthPeek();
+    const {arenaDockPeek}=await import('./arena.js');
+    const st=await arenaDockPeek();
     if(st?.error==='terms-required')arenaDockSet('idle',{error:'Review Arena’s Terms of Use in the relay tab yourself.'});
-    else if(st?.composer)arenaDockSet('signed-in');
     else if(st?.wall==='login')arenaDockSet('signed-out');
+    else if(st?.composer||st?.answer){
+      const fp=arenaAnswerFingerprint(st.answer);
+      if(fp&&fp!==arenaLastAnswerFp)arenaDockSet('new-answer');
+      else arenaDockSet(st.composer?'signed-in':'done');
+    }
   }catch{/* no relay tab, a closed tab, or an unreadable page: keep the current phase */}
 }
 $('arenaDockHead').onclick=()=>{ui.arenaDockCollapsed=ui.arenaDockCollapsed!==true;persistUI();renderArenaDock();};
@@ -236,6 +244,29 @@ $('arenaDockConnect').onclick=safe(async()=>{
 $('arenaDockOpen').onclick=safe(async()=>{const {arenaOpenForSignIn}=await import('./arena.js');await arenaOpenForSignIn();status('The Arena tab is in front.');});
 $('arenaDockOn').onchange=safe(async()=>{state.arenaDock=$('arenaDockOn').checked;await save();renderArenaDock();});
 setInterval(()=>{safe(arenaDockPoll)();},10000);
+// The proactive half of the two-sided flow: when the relay tab holds an answer Orbit
+// has never ingested — including one the person typed into Arena themselves — one
+// click brings it into the transcript, and the roster can take it from there.
+$('arenaDockPull').onclick=safe(async()=>{
+  if(busy)throw Error('Stop the current run before pulling.');
+  const {arenaDockPeek}=await import('./arena.js');
+  const st=await arenaDockPeek();
+  const text=String(st?.answer||'').trim();
+  if(!text)throw Error('Nothing to pull yet — the relay tab has no finished answer.');
+  const chat=await ensureChat();
+  chat.messages.push({role:'assistant',content:text,state:'complete',sources:[],provenance:'Arena · pulled'});
+  arenaLastAnswerFp=arenaAnswerFingerprint(text);
+  await save();renderMessages();
+  arenaDockSet('done',{preview:text});
+  status('Pulled the Arena answer into this conversation.');
+  const choice=await askCard({kind:'options',title:'Fan this answer out to the roster?',
+    body:'The answer is now in the transcript. Orbit can send it to your other personas for verification, challenge and planning — that part costs no Arena credit.',
+    options:['Fan out','Keep it']},{fallback:()=>'Keep it'});
+  if(choice==='Fan out'){
+    const question=String(st?.userText||'').trim()||'Review this Arena answer.';
+    await runResearch('',{briefOverride:text,question});
+  }
+});
 // ---------------------------------------------------------------------------
 // Personas
 // ---------------------------------------------------------------------------
@@ -857,21 +888,24 @@ async function runCheckin(){
 // announced as a chip, and one stage failing never sinks the stages after it.
 // ---------------------------------------------------------------------------
 const RESEARCH_STAGE_TIMEOUT={arena:240000,analysis:120000,synthesis:180000};
-async function runResearch(rawQuestion){
+// briefOverride: the Arena stage is skipped entirely — the brief already exists (pulled
+// from the relay tab), so the run costs no Arena credit and needs no Arena model.
+async function runResearch(rawQuestion,opts={}){
   if(busy||!ownsWorkspace)return;
-  const question=String(rawQuestion??$('prompt').value??'').trim();
+  const briefOverride=String(opts?.briefOverride||'').trim();
+  const optsQuestion=String(opts?.question||'').trim();
+  const question=String(rawQuestion??$('prompt').value??'').trim()||optsQuestion||(briefOverride?'Review this Arena answer.':'');
   if(!question)throw Error('Type the research question first.');
   const chat=await ensureChat();
   const lead=personaOfChat(chat);
   const activeCfg=config();
-  const arenaModel=String(state.provider==='arena'?activeCfg.model:(state.profiles.arena?.model||'')).trim();
-  if(!arenaModel)throw Error('Choose an Arena model first: Settings → Arena → Fetch models → pick one.');
-  if(!await chrome.permissions.contains({origins:[hostPattern(presets.arena)]}))throw Error('Grant Arena access first — Settings → Arena → Connect Arena (or Fetch models) asks for it once.');
+  const arenaModel=briefOverride?'':String(state.provider==='arena'?activeCfg.model:(state.profiles.arena?.model||'')).trim();
+  if(!briefOverride&&!arenaModel)throw Error('Choose an Arena model first: Settings → Arena → Fetch models → pick one.');
+  if(!briefOverride&&!await chrome.permissions.contains({origins:[hostPattern(presets.arena)]}))throw Error('Grant Arena access first — Settings → Arena → Connect Arena (or Fetch models) asks for it once.');
   const {cfg,key}=await providerCredentials();
   const researchers=selectResearchers(state.roster,lead?.id);
   if(chat.title==='New conversation')chat.title=question.slice(0,58)||'Research';
-  $('prompt').value='';growPrompt();
-  chat.messages.push({role:'user',content:question});
+  if(!briefOverride){$('prompt').value='';growPrompt();chat.messages.push({role:'user',content:question});}
   const runMsg={role:'assistant',content:'',state:'streaming',activity:[],sources:[]};
   chat.messages.push(runMsg);
   let step=0;
@@ -888,33 +922,40 @@ async function runResearch(rawQuestion){
   const analyses=[];
   try{
     await save();
-    const {arenaGenerate}=await import('./arena.js');
-    say('[step · step '+(++step)+'] Sending the question to Arena ('+arenaModel+') — one message from your daily credits…');
-    arenaDockSet('generating',{model:arenaModel,preview:''});
-    const arenaCfg={transport:'arena',base:presets.arena,model:arenaModel};
-    const briefMsg={role:'assistant',content:'',state:'streaming',sources:[],provenance:'Arena · '+arenaModel};
-    chat.messages.push(briefMsg);
     let briefText='';
-    const runArena=()=>arenaGenerate(arenaCfg,'',[
-      {role:'system',content:'You are the research engine in Orbit’s pipeline. Produce exactly the brief the instructions ask for.'},
-      {role:'user',content:buildResearchPrompt(question)},
-    ],{signal:controller.signal,onText:d=>{briefText+=d;briefMsg.content=briefText;paint();arenaDockSet('generating',{preview:briefText});},timeoutMs:RESEARCH_STAGE_TIMEOUT.arena});
-    try{
-      await runArena();
-    }catch(e){
-      if(e?.arenaLogin&&!controller.signal.aborted){
-        say('[step · step '+(++step)+'] Arena wants a sign-in — waiting for you to continue with Google in the relay tab…');
-        const res=await ensureArenaSignedIn({signal:controller.signal});
-        if(!res.ok)throw Error(res.error||'The Arena sign-in did not complete.');
-        say('[step · step '+(++step)+'] Signed in — sending the question to Arena again…');
-        await runArena(); // one automatic retry after a real sign-in; a second wall fails the stage
-      }else throw e;
+    if(briefOverride){
+      briefText=briefOverride;
+      say('[step · step '+(++step)+'] Brief pulled from the Arena tab — the Arena stage is skipped (no credit used).');
+      arenaLastAnswerFp=arenaAnswerFingerprint(briefText);
+    }else{
+      const {arenaGenerate}=await import('./arena.js');
+      say('[step · step '+(++step)+'] Sending the question to Arena ('+arenaModel+') — one message from your daily credits…');
+      arenaDockSet('generating',{model:arenaModel,preview:''});
+      const arenaCfg={transport:'arena',base:presets.arena,model:arenaModel};
+      const briefMsg={role:'assistant',content:'',state:'streaming',sources:[],provenance:'Arena · '+arenaModel};
+      chat.messages.push(briefMsg);
+      const runArena=()=>arenaGenerate(arenaCfg,'',[
+        {role:'system',content:'You are the research engine in Orbit’s pipeline. Produce exactly the brief the instructions ask for.'},
+        {role:'user',content:buildResearchPrompt(question)},
+      ],{signal:controller.signal,onText:d=>{briefText+=d;briefMsg.content=briefText;paint();arenaDockSet('generating',{preview:briefText});},timeoutMs:RESEARCH_STAGE_TIMEOUT.arena});
+      try{
+        await runArena();
+      }catch(e){
+        if(e?.arenaLogin&&!controller.signal.aborted){
+          say('[step · step '+(++step)+'] Arena wants a sign-in — waiting for you to continue with Google in the relay tab…');
+          const res=await ensureArenaSignedIn({signal:controller.signal});
+          if(!res.ok)throw Error(res.error||'The Arena sign-in did not complete.');
+          say('[step · step '+(++step)+'] Signed in — sending the question to Arena again…');
+          await runArena(); // one automatic retry after a real sign-in; a second wall fails the stage
+        }else throw e;
+      }
+      briefMsg.state='complete';
+      briefText=String(briefText||'');
+      if(!briefText.trim())throw Error('Arena returned an empty brief.');
+      arenaLastAnswerFp=arenaAnswerFingerprint(briefText);
+      say('[ok · step '+(++step)+'] Brief received ('+briefText.length.toLocaleString()+' characters).');
+      arenaDockSet('done',{preview:briefText});
     }
-    briefMsg.state='complete';
-    briefText=String(briefText||'');
-    if(!briefText.trim())throw Error('Arena returned an empty brief.');
-    say('[ok · step '+(++step)+'] Brief received ('+briefText.length.toLocaleString()+' characters).');
-    arenaDockSet('done',{preview:briefText});
     if(!researchers.length){
       say('[step · step '+(++step)+'] The roster has no other personas, so the brief goes straight to synthesis. Add personas in the roster strip to fan research out.');
     }else{
@@ -1007,6 +1048,7 @@ function researchToolsFor({signal,onNote}={}){
         text=String(text||'').trim();
         if(!text)return {ok:false,error:'Arena returned an empty brief.'};
         note('Arena brief received ('+text.length.toLocaleString()+' characters).');
+        arenaLastAnswerFp=arenaAnswerFingerprint(text);
         arenaDockSet('done',{preview:text});
         return {ok:true,detail:text.length>RESEARCH_TOOL_TEXT_BUDGET?text.slice(0,RESEARCH_TOOL_TEXT_BUDGET)+'\n\n[Truncated — the full brief is '+text.length.toLocaleString()+' characters.]':text};
       }catch(e){return {ok:false,error:String(e?.message||e)};}
@@ -1084,7 +1126,7 @@ async function maybeSmartContext(){const cfg=config();if(!cfg.smartContext||pend
 async function ensureChat(){let chat=current();if(chat)return chat;const keep=structuredClone(pending);await newChat();chat=current();pending=keep;renderAttachments();return chat;}
 async function send(regenerate=false,{skipContext=false}={}){if(busy||!ownsWorkspace)return;
   if(!regenerate){const typed=$('prompt').value.trim(),slash=typed?parseSlashCommand(typed):null;if(slash?.skill?.slug==='research'){const rest=slash.rest.trim();if(!rest)throw Error('Add the question after /research — e.g. /research What changed in this field this year?');$('prompt').value='';growPrompt();return runResearch(rest);}}
-  const cfg=config();cfg.base=normalizeBase(cfg.base);if(!cfg.model)throw Error('Open Settings and choose a model.');if(!await chrome.permissions.contains({origins:[hostPattern(cfg.base)]}))throw Error('Open Settings and grant provider access.');const key=keyFor(cfg.base);if(!key&&!isLoopback(cfg.base)&&cfg.transport!=='arena')throw Error('Open Settings and save your API key once.');let chat=await ensureChat();let user;if(regenerate){if(chat.messages.at(-1)?.role!=='assistant')throw Error('There is no answer to regenerate.');}else{const text=$('prompt').value.trim();if(!text)return;if(!skipContext)await maybeSmartContext();const mention=matchMention(text,state.roster);if(mention){chat.persona=mention.persona.id;state.roster=selectPersona(state.roster,mention.persona.id);Object.assign(cfg,config());cfg.base=normalizeBase(cfg.base);}user={role:'user',content:mention?mention.rest:text,refs:structuredClone(pending)};chat.messages.push(user);}let messages;try{messages=buildMessages(regenerate?{...chat,messages:chat.messages.slice(0,-1)}:chat);requestBody(cfg,messages);}catch(e){if(user)chat.messages.pop();throw e;}if(regenerate)chat.messages.pop();else{$('prompt').value='';growPrompt();pending=[];if(chat.title==='New conversation'&&cfg.autoTitle)chat.title=(parseSlashCommand(user.content)?.rest||user.content).replace(/^\W+/,'').slice(0,58)||'New conversation';}const answer={role:'assistant',content:'',state:'streaming',sources:[]};chat.messages.push(answer);busy=true;controller=new AbortController();controls();render();status('Connecting…');const clearPresence=presenceWatch();let lastCheckpoint=0,lastPaint=0;const timer=setTimeout(()=>controller.abort(),300000);try{await save();if(cfg.transport==='arena')arenaDockSet('generating',{model:cfg.model,preview:''});await generate(cfg,key,messages,{signal:controller.signal,onText:delta=>{answer.content+=delta;if(answer.content.length>250000){controller.abort();throw Error('Output reached the size cap.');}const now=Date.now();if(now-lastPaint>75){renderMessages();$('messages').scrollTop=$('messages').scrollHeight;lastPaint=now;}if(now-lastCheckpoint>1500){lastCheckpoint=now;save().catch(e=>status('Checkpoint failed: '+e.message));}status('Generating…');if(cfg.transport==='arena')arenaDockState.preview=String(answer.content).slice(-ARENA_DOCK_PREVIEW_CHARS);},onSources:items=>{for(const s of items)if(!answer.sources.some(x=>x.url===s.url))answer.sources.push(s);},onUsage:usage=>{if(usage)answer.usage=usage;},onSearch:phase=>status('Provider web search: '+phase)});answer.state='complete';status('Done.');if(cfg.transport==='arena')arenaDockSet('done',{preview:answer.content});if(state.autoSpeak&&speechAvailable())speak(answer.content,{voiceURI:state.voiceURI||''}).catch(()=>{});}catch(e){answer.state=controller.signal.aborted?'interrupted':'failed';status(controller.signal.aborted?'Stopped or timed out. Partial output retained.':e.message);if(cfg.transport==='arena'&&!controller.signal.aborted&&!e?.arenaLogin)arenaDockSet('failed',{error:e.message});else if(cfg.transport==='arena'&&controller.signal.aborted)arenaDockSet('idle');if(e?.arenaLogin&&!controller.signal.aborted)ensureArenaSignedIn({card:true}).catch(()=>{});}finally{clearTimeout(timer);clearPresence();busy=false;controller=null;controls();renderMessages();await save();}}
+  const cfg=config();cfg.base=normalizeBase(cfg.base);if(!cfg.model)throw Error('Open Settings and choose a model.');if(!await chrome.permissions.contains({origins:[hostPattern(cfg.base)]}))throw Error('Open Settings and grant provider access.');const key=keyFor(cfg.base);if(!key&&!isLoopback(cfg.base)&&cfg.transport!=='arena')throw Error('Open Settings and save your API key once.');let chat=await ensureChat();let user;if(regenerate){if(chat.messages.at(-1)?.role!=='assistant')throw Error('There is no answer to regenerate.');}else{const text=$('prompt').value.trim();if(!text)return;if(!skipContext)await maybeSmartContext();const mention=matchMention(text,state.roster);if(mention){chat.persona=mention.persona.id;state.roster=selectPersona(state.roster,mention.persona.id);Object.assign(cfg,config());cfg.base=normalizeBase(cfg.base);}user={role:'user',content:mention?mention.rest:text,refs:structuredClone(pending)};chat.messages.push(user);}let messages;try{messages=buildMessages(regenerate?{...chat,messages:chat.messages.slice(0,-1)}:chat);requestBody(cfg,messages);}catch(e){if(user)chat.messages.pop();throw e;}if(regenerate)chat.messages.pop();else{$('prompt').value='';growPrompt();pending=[];if(chat.title==='New conversation'&&cfg.autoTitle)chat.title=(parseSlashCommand(user.content)?.rest||user.content).replace(/^\W+/,'').slice(0,58)||'New conversation';}const answer={role:'assistant',content:'',state:'streaming',sources:[]};chat.messages.push(answer);busy=true;controller=new AbortController();controls();render();status('Connecting…');const clearPresence=presenceWatch();let lastCheckpoint=0,lastPaint=0;const timer=setTimeout(()=>controller.abort(),300000);try{await save();if(cfg.transport==='arena')arenaDockSet('generating',{model:cfg.model,preview:''});await generate(cfg,key,messages,{signal:controller.signal,onText:delta=>{answer.content+=delta;if(answer.content.length>250000){controller.abort();throw Error('Output reached the size cap.');}const now=Date.now();if(now-lastPaint>75){renderMessages();$('messages').scrollTop=$('messages').scrollHeight;lastPaint=now;}if(now-lastCheckpoint>1500){lastCheckpoint=now;save().catch(e=>status('Checkpoint failed: '+e.message));}status('Generating…');if(cfg.transport==='arena')arenaDockState.preview=String(answer.content).slice(-ARENA_DOCK_PREVIEW_CHARS);},onSources:items=>{for(const s of items)if(!answer.sources.some(x=>x.url===s.url))answer.sources.push(s);},onUsage:usage=>{if(usage)answer.usage=usage;},onSearch:phase=>status('Provider web search: '+phase)});answer.state='complete';status('Done.');if(cfg.transport==='arena'){arenaLastAnswerFp=arenaAnswerFingerprint(answer.content);arenaDockSet('done',{preview:answer.content});}if(state.autoSpeak&&speechAvailable())speak(answer.content,{voiceURI:state.voiceURI||''}).catch(()=>{});}catch(e){answer.state=controller.signal.aborted?'interrupted':'failed';status(controller.signal.aborted?'Stopped or timed out. Partial output retained.':e.message);if(cfg.transport==='arena'&&!controller.signal.aborted&&!e?.arenaLogin)arenaDockSet('failed',{error:e.message});else if(cfg.transport==='arena'&&controller.signal.aborted)arenaDockSet('idle');if(e?.arenaLogin&&!controller.signal.aborted)ensureArenaSignedIn({card:true}).catch(()=>{});}finally{clearTimeout(timer);clearPresence();busy=false;controller=null;controls();renderMessages();await save();}}
 function explainProbeFailure(message,format){
  const status=Number(/Provider HTTP (\d{3})/.exec(message)?.[1]||0);
  if(status===401||status===403)return `The provider refused this request (HTTP ${status}). Your key may be missing, expired, unpaid, or not permitted for that model. This is separate from the model list, which can fail for other reasons.`;

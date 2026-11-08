@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {buildResearchPrompt,buildAnalysisPrompt,buildSynthesisPrompt,selectResearchers,truncateForPrompt,RESEARCH_ROLES,RESEARCHER_CAP,RESEARCH_QUESTION_CHARS,RESEARCH_TEXT_BUDGET} from '../src/research.js';
+import {buildResearchPrompt,buildAnalysisPrompt,buildSynthesisPrompt,selectResearchers,truncateForPrompt,arenaAnswerFingerprint,RESEARCH_ROLES,RESEARCHER_CAP,RESEARCH_QUESTION_CHARS,RESEARCH_TEXT_BUDGET} from '../src/research.js';
 
 const roster={activeId:'orbit',personas:[
   {id:'orbit',name:'Orbit',title:'Browser copilot',accent:'teal',instructions:'',model:''},
@@ -94,4 +94,14 @@ test('the truncation helper passes short text through untouched',()=>{
   const cut=truncateForPrompt('x'.repeat(101),100);
   assert.match(cut,/\[Truncated/);
   assert.ok(cut.startsWith('x'.repeat(100)));
+});
+
+test('the Arena answer fingerprint is whitespace-blind and blind to loading text',()=>{
+  const a=arenaAnswerFingerprint('Hello world — this is a real answer body from Arena.');
+  assert.ok(a.length>0);
+  assert.equal(a,arenaAnswerFingerprint('Hello world — this is a real answer body from Arena. '),'trailing whitespace does not change identity');
+  assert.notEqual(a,arenaAnswerFingerprint('Hello world — this is a real answer body, revised.'));
+  assert.equal(arenaAnswerFingerprint('short'),'','loading fragments must not look like answers');
+  assert.equal(arenaAnswerFingerprint(''),'');
+  assert.equal(arenaAnswerFingerprint(null),'');
 });

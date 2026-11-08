@@ -48,10 +48,18 @@ async function withFocus(tabId,fn){
   return out;
 }
 
-// ---- Injected drivers. Self-contained: chrome.scripting serializes them into the page. ----
+// ---- Injected drivers. Self-contained: chrome.scripting serializes each one alone, so
+// no driver may reference a helper outside its own body. Selector facts are anchored to
+// what working arena.ai automation reads from the live DOM (2026): composer
+// `textarea[name="message"]`, send `button[aria-label="Send message"]` guarded by both
+// `disabled` and `aria-disabled`, messages in an `<ol>` whose DOM order may run opposite
+// to the visual order (`flex-col-reverse`), user bubbles right-aligned
+// (`justify-end`/`self-end`) inside the same prose-bearing containers as answers, and a
+// navigation to /c/<chat-id> after send — which is why the read loop never pins a
+// documentId. —
 function driverReady(){
   if(location.origin!=='https://arena.ai')return {error:'wrong-origin'};
-  const ta=document.querySelector('textarea[placeholder]');
+  const ta=document.querySelector('textarea[name="message"], form textarea, textarea[placeholder]');
   const dlg=[...document.querySelectorAll('[role="dialog"],[role="alertdialog"]')].map(d=>d.textContent||'').join(' ');
   if(/Terms of Use.*Privacy Policy|By clicking ["“]Agree/i.test(dlg))return {error:'terms-required'};
   const loginWall=/free account is required|log in or create account/i.test(dlg)&&/continue with/i.test(dlg);
@@ -59,28 +67,32 @@ function driverReady(){
 }
 function driverSend(prompt){
   if(location.origin!=='https://arena.ai')return {error:'wrong-origin'};
-  const ta=document.querySelector('textarea[placeholder]');
+  const ta=document.querySelector('textarea[name="message"], form textarea, textarea[placeholder]');
   if(!ta)return {error:'no-composer'};
   document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',keyCode:27,which:27,bubbles:true}));
   ta.focus();
+  // React-safe assignment: reset the value tracker, use the native setter, then a real
+  // InputEvent — the same pattern working arena.ai tooling uses.
   const setter=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set;
+  if(ta._valueTracker)ta._valueTracker.setValue('');
   setter.call(ta,prompt);
-  ta.dispatchEvent(new Event('input',{bubbles:true}));
+  ta.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:prompt}));
+  ta.dispatchEvent(new Event('change',{bubbles:true}));
   return (async()=>{
     await new Promise(r=>setTimeout(r,300)); // let any popover finish dismissing
     let btn=null;
-    for(let i=0;i<12;i++){await new Promise(r=>setTimeout(r,200));btn=document.querySelector('button[aria-label="Send message"]');if(btn&&!btn.disabled)break;}
+    for(let i=0;i<12;i++){await new Promise(r=>setTimeout(r,200));btn=document.querySelector('button[aria-label="Send message"]');if(btn&&!btn.disabled&&btn.getAttribute('aria-disabled')!=='true')break;}
     if(!btn)return {error:'no-send'};
-    if(btn.disabled)return {error:'send-disabled'};
+    if(btn.disabled||btn.getAttribute('aria-disabled')==='true')return {error:'send-disabled'};
     return {ok:true};
   })();
 }
 function driverSubmit(prompt){
   if(location.origin!=='https://arena.ai')return {error:'wrong-origin'};
-  const ta=document.querySelector('textarea[placeholder]');
+  const ta=document.querySelector('textarea[name="message"], form textarea, textarea[placeholder]');
   if(!ta||ta.value!==prompt)return {error:'composer-changed'};
   const btn=document.querySelector('button[aria-label="Send message"]');
-  if(!btn||btn.disabled)return {error:'send-disabled'};
+  if(!btn||btn.disabled||btn.getAttribute('aria-disabled')==='true')return {error:'send-disabled'};
   btn.click();
   return {ok:true};
 }
@@ -90,14 +102,45 @@ function driverRead(){
   if(/Terms of Use.*Privacy Policy|By clicking ["“]Agree/i.test(dlg))return {error:'terms-required'};
   if(/free account is required|log in or create account/i.test(dlg)&&/continue with/i.test(dlg))return {error:'login-wall'};
   const main=document.querySelector('main')||document.body;
-  const answers=[...main.querySelectorAll('.prose')];
-  const text=answers.at(-1)?.innerText||'';
-  const stopBtn=[...document.querySelectorAll('button')].find(b=>/stop generating/i.test((b.getAttribute('aria-label')||'')+' '+(b.textContent||'')));
+  // The transcript is an ordered list; with flex-col-reverse the DOM order runs opposite
+  // to the visual order, so candidates are ordered by computed flex direction, never by
+  // document order alone. User and answer bubbles both carry prose classes — a bubble is
+  // the person's when it is right-aligned. The census travels with every read so a site
+  // redesign is diagnosable from the error text alone.
+  const list=main.querySelector('ol')||main;
+  let roots=[...list.children];
+  if(!roots.length)roots=[...main.querySelectorAll('div')].filter(d=>d.querySelector('.prose, .markdown, [class*="prose"]'));
+  const msgs=[];
+  for(const root of roots){
+    const prose=root.querySelector('.prose, .markdown, [class*="prose"]');
+    const text=String((prose||root).innerText||'');
+    if(!text.trim())continue;
+    const cls=typeof root.className==='string'?root.className:'';
+    msgs.push({user:/\b(justify-end|self-end)\b/.test(cls),root,text});
+  }
+  if(!msgs.length){
+    // Shadow-piercing fallback, only paid for when the shallow read found nothing.
+    const found=[];
+    const walk=node=>{if(!node||typeof node.querySelectorAll!=='function')return;
+      for(const el of node.querySelectorAll('.prose, .markdown, [class*="prose"]'))found.push(el);
+      for(const el of node.querySelectorAll('*'))if(el.shadowRoot)walk(el.shadowRoot);};
+    walk(main);
+    for(const prose of found){const text=String(prose.innerText||'');if(text.trim())msgs.push({user:false,root:prose,text});}
+  }
+  const reversed=/column-reverse/.test(String(getComputedStyle(list).flexDirection||''));
+  const ordered=reversed?[...msgs].reverse():msgs;
+  let lastAssistant=null,lastUser='';
+  for(const m of ordered){if(m.user)lastUser=m.text;else lastAssistant=m;}
+  const isStop=b=>/\bstop\b/i.test(b.getAttribute('aria-label')||'')||(/\bstop\b/i.test(b.textContent||'')&&String(b.textContent||'').trim().length<=12);
+  const stopBtn=[...document.querySelectorAll('button')].find(isStop);
   const sendBtn=document.querySelector('button[aria-label="Send message"]');
+  const sendIdle=!!sendBtn&&!sendBtn.disabled&&sendBtn.getAttribute('aria-disabled')!=='true';
   const alert=document.querySelector('[role="alert"]');
   const errText=alert?(alert.textContent||'').trim():'';
   const generating=!!stopBtn||!!document.querySelector('[data-testid="pending-chat"]');
-  return {text,count:answers.length,generating,idle:!!sendBtn&&!sendBtn.disabled&&!generating,
+  const census='list='+(list!==main?'ol':'none')+' roots='+roots.length+' msgs='+msgs.length+(reversed?' rev=1':'');
+  return {text:lastAssistant?lastAssistant.text:'',userText:String(lastUser||'').slice(0,400),count:msgs.length,
+    generating,idle:sendIdle&&!generating,census,
     error:errText&&/wrong|rejected|failed|error|limit|credit|quota/i.test(errText)?errText.slice(0,300):''};
 }
 function driverStop(){
@@ -108,7 +151,7 @@ function driverStop(){
 }
 function driverOpenPicker(){
   if(location.origin!=='https://arena.ai')return {error:'wrong-origin'};
-  const ta=document.querySelector('textarea[placeholder]');
+  const ta=document.querySelector('textarea[name="message"], form textarea, textarea[placeholder]');
   const form=ta?(ta.closest('form')||ta.parentElement.parentElement.parentElement):document;
   const chips=[...form.querySelectorAll('button')].filter(b=>!b.getAttribute('aria-label')&&(b.textContent||'').trim());
   const chip=chips.at(-1);
@@ -134,13 +177,13 @@ function driverAuthState(){
   const dlg=[...document.querySelectorAll('[role="dialog"],[role="alertdialog"]')].map(d=>d.textContent||'').join(' ');
   if(/Terms of Use.*Privacy Policy|By clicking ["“]Agree/i.test(dlg))return {error:'terms-required'};
   if(/free account is required|log in or create account/i.test(dlg)&&/continue with/i.test(dlg))return {wall:'login'};
-  return {composer:!!document.querySelector('textarea[placeholder]')};
+  return {composer:!!document.querySelector('textarea[name="message"], form textarea, textarea[placeholder]')};
 }
 
 async function openDirect(id,model,signal,deadline){
   checkStopped(signal,deadline);
   // Orbit replays the whole transcript, so every request needs a fresh Arena conversation.
-  await chrome.tabs.update(id,{url:ORIGIN+'/direct?model_a='+encodeURIComponent(model)});
+  await chrome.tabs.update(id,{url:ORIGIN+'/text/direct?model_a='+encodeURIComponent(model)});
   await waitComplete(id,signal,deadline);
   let ready=null;
   for(let i=0;i<40;i++){
@@ -178,31 +221,44 @@ export async function arenaGenerate(config,key,messages,{signal,onText,onUsage,t
     const prepared=await exec(id,driverSend,[prompt],documentId);
     if(prepared.error)throw sendError(prepared.error);
     checkStopped(signal,deadline);
+    // Baseline and submit may pin the pre-send document; the reads after submit never
+    // do — Arena navigates the conversation to /c/<id>, and the drivers' origin guards
+    // make following the live document safe.
     const baseline=await exec(id,driverRead,[],documentId);
     if(baseline.error)throw sendError(baseline.error);
     if(baseline.generating)throw Error('Arena is already generating. Wait for it to finish.');
     checkStopped(signal,deadline);
     const submitted=await exec(id,driverSubmit,[prompt],documentId);
     if(submitted.error)throw sendError(submitted.error);
-    let last='',stable=0,sawGen=false;const start=Date.now();
+    let last='',stable=0,sawNew=false,census='';const start=Date.now();
     try{
       while(true){
         checkStopped(signal,deadline);
-        const r=await exec(id,driverRead,[],documentId);
+        const r=await exec(id,driverRead);
         if(r.error==='login-wall'||r.error==='terms-required')throw sendError(r.error);
         if(r.error)throw Error('Arena: '+r.error);
-        if(r.generating)sawGen=true;
-        const text=r.count>baseline.count?r.text:'';
-        if(text!==last){last=text;stable=0;}else stable++;
-        if(text.trim()&&r.idle&&stable>=2){
-          // Rendered Markdown can shrink or rewrite earlier text; emit only the settled answer.
-          onText?.(text);onUsage?.({transport:'arena'});return;
+        census=r.census||census;
+        const text=String(r.text||'').trim();
+        // Fresh means a NEW assistant answer: not the pre-send page, never the echo of
+        // the prompt itself.
+        const fresh=text&&text!==String(baseline.text||'').trim()&&text!==prompt.trim();
+        if(fresh){sawNew=true;if(text!==last){last=text;stable=0;}else stable++;}
+        if(fresh&&!r.generating&&r.idle&&stable>=4){
+          // One confirmation read: a streaming pause must not be mistaken for the end.
+          await sleep(900);
+          const again=String((await exec(id,driverRead).catch(()=>null))?.text||'').trim();
+          if(again===last){
+            // Rendered Markdown can rewrite earlier text; emit only the settled answer.
+            onText?.(last);onUsage?.({transport:'arena'});return;
+          }
+          last=again;stable=0;
         }
-        if(!sawGen&&!text.trim()&&r.idle&&Date.now()-start>20000)throw Error('Arena did not start a response. Check that you are signed in and still have daily credits.');
+        if(!sawNew&&r.idle&&Date.now()-start>20000)throw Error('Arena did not start a response. Check that you are signed in and still have daily credits.');
         await sleep(700);
       }
     }catch(error){
-      if(signal?.aborted||Date.now()>=deadline)await exec(id,driverStop,[],documentId).catch(()=>{});
+      if(/timed out/.test(String(error.message||''))&&census)error.message+=' ['+census+']';
+      if(signal?.aborted||Date.now()>=deadline)await exec(id,driverStop).catch(()=>{});
       throw error;
     }
   });
@@ -216,7 +272,7 @@ export async function arenaListModels(){
   const id=await relayTabId();
   return withFocus(id,async()=>{
   const t=await chrome.tabs.get(id);
-  if(!/\/direct/.test(t.url||'')){await chrome.tabs.update(id,{url:ORIGIN+'/direct'});await waitComplete(id,undefined,Date.now()+30000);}
+  if(!/\/direct/.test(t.url||'')){await chrome.tabs.update(id,{url:ORIGIN+'/text/direct'});await waitComplete(id,undefined,Date.now()+30000);}
   let ready;
   for(let i=0;i<30;i++){ready=await exec(id,driverReady);if(ready.error)throw sendError(ready.error);if(ready.composer)break;await sleep(500);}
   if(!ready?.composer)throw sendError('no-composer');
@@ -248,7 +304,7 @@ export async function arenaOpenForSignIn(){
   const url=String(t.url||'');
   let host='';try{host=new URL(url).hostname;}catch{}
   const midOAuth=/google\./i.test(host)||host===ORIGIN_HOST;
-  if(host!==ORIGIN_HOST&&!midOAuth){await chrome.tabs.update(id,{url:ORIGIN+'/direct'});}
+  if(host!==ORIGIN_HOST&&!midOAuth){await chrome.tabs.update(id,{url:ORIGIN+'/text/direct'});}
   await chrome.tabs.update(id,{active:true});
   return id;
 }
@@ -272,7 +328,7 @@ export async function arenaWaitSignedIn({signal,timeoutMs=300000}={}){
     if(st.error==='terms-required')throw sendError('terms-required');
     if(st.wall==='login')continue;
     if(st.composer)return {signedIn:true};
-    if(!landed){landed=true;await chrome.tabs.update(id,{url:ORIGIN+'/direct'}).catch(()=>{});}
+    if(!landed){landed=true;await chrome.tabs.update(id,{url:ORIGIN+'/text/direct'}).catch(()=>{});}
   }
 }
 
@@ -284,4 +340,17 @@ export async function arenaAuthPeek(){
   const t=await chrome.tabs.get(id);
   if(!String(t.url||'').startsWith(ORIGIN))return {wall:'off-origin'};
   return await exec(id,driverAuthState);
+}
+
+/** The dock's read-only look at the relay tab: auth state plus the latest assistant answer and the latest prompt, so Orbit can notice answers it never sent — including ones the person typed themselves. Throws when there is no usable relay tab. */
+export async function arenaDockPeek(){
+  let id=null;
+  try{({arenaRelayTab:id}=await chrome.storage.session.get('arenaRelayTab'));}catch{}
+  if(id==null)throw Error('no relay tab yet');
+  const t=await chrome.tabs.get(id);
+  if(!String(t.url||'').startsWith(ORIGIN))return {wall:'off-origin'};
+  const st=await exec(id,driverAuthState);
+  if(st?.error||st?.wall)return st;
+  const r=await exec(id,driverRead).catch(()=>null);
+  return {...st,answer:String(r?.text||''),userText:String(r?.userText||''),census:r?.census||''};
 }

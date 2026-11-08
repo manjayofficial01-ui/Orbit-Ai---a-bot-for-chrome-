@@ -176,7 +176,7 @@ test('all-sites access stays optional and requestable for captures only',()=>{
 test('creating the first chat never discards the message attachments',()=>{
   assert.match(app,/async function ensureChat\(\)\{let chat=current\(\);if\(chat\)return chat;const keep=structuredClone\(pending\);await newChat\(\);chat=current\(\);pending=keep;renderAttachments\(\);return chat;\}/,
     'ensureChat must snapshot pending before newChat and restore it after');
-  assert.equal([...app.matchAll(/await ensureChat\(\)/g)].length,6,'chat, agent, tasks, check-in, research and the Arena sign-in must all use it');
+  assert.equal([...app.matchAll(/await ensureChat\(\)/g)].length,7,'chat, agent, tasks, check-in, research, the Arena sign-in and the Arena pull must all use it');
   assert.doesNotMatch(app,/if\(!chat\)\{await newChat\(\);chat=current\(\);\}/,'no path may auto-create a chat while dropping pending references');
 });
 

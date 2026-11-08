@@ -34,6 +34,17 @@ export function truncateForPrompt(text,max){
 }
 
 /**
+ * A cheap, whitespace-insensitive identity for an Arena answer, so the dock can tell
+ * "the relay tab shows an answer Orbit has never ingested" from "the same one again".
+ * Empty until the text is substantial — a loading page must not look like an answer.
+ */
+export function arenaAnswerFingerprint(text){
+  const t=String(text??'').replace(/\s+/g,' ').trim();
+  if(t.length<20)return '';
+  return t.length+':'+t.slice(0,80)+':'+t.slice(-80);
+}
+
+/**
  * The prompt sent to Arena through the relay. Arena models may or may not browse;
  * the brief is asked to separate what it established from what it could not, so the
  * reviewers and the synthesis inherit the honesty instead of the bluff.

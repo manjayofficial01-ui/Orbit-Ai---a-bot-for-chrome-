@@ -48,6 +48,7 @@ record('extension boots',!!(await ev(ui,`return !!document.getElementById('promp
 // The Arena dock: visible by default, no iframe anywhere, and it mirrors the relay.
 const dock=await ev(ui,`return {visible:!document.getElementById('arenaDock').hidden,status:document.getElementById('arenaDockStatus').textContent,bodyHidden:document.getElementById('arenaDockBody').hidden,iframe:!!document.querySelector('iframe'),messagesRow:getComputedStyle(document.getElementById('messages')).gridRowStart};`);
 record('the Arena dock renders (own grid row, never an embed)',dock?.visible===true&&typeof dock.status==='string'&&dock.iframe===false&&dock.messagesRow==='4',JSON.stringify(dock));
+record('the dock offers Pull into Orbit',!!(await ev(ui,`return !!document.getElementById('arenaDockPull');`)));
 
 // Open settings, switch to Arena, check the keyless UI.
 await ev(ui,`document.getElementById('settings').click();const p=document.getElementById('provider');p.value='arena';p.dispatchEvent(new Event('change',{bubbles:true}));await new Promise(r=>setTimeout(r,300));return true;`);

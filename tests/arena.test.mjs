@@ -13,9 +13,9 @@ const [app,html,core,arena]=await Promise.all([
   readFile(new URL('src/arena.js',root),'utf8')
 ]);
 
-function runDriver(name,document,origin='https://arena.ai'){
+function runDriver(name,document,origin='https://arena.ai',extra={}){
   const source=arena.match(new RegExp(`function ${name}\\([\\s\\S]*?\\n\\}`))[0];
-  return runInNewContext(`(${source})()`,{document,location:{href:origin+'/direct',origin}});
+  return runInNewContext(`(${source})()`,{...extra,document,location:{href:origin+'/direct',origin}});
 }
 
 function relayHarness({reads=[],onDriver=()=>{},initialUrl='https://arena.ai/direct?model_a=max'}={}){
@@ -75,11 +75,11 @@ test('preparing the composer never clicks Send before the outer cancellation che
   let clicks=0;
   class TextArea{set value(v){this.text=v;}focus(){}dispatchEvent(){}}
   const ta=new TextArea();
-  const document={dispatchEvent(){},querySelector:selector=>selector.startsWith('textarea')?ta:{disabled:false,click:()=>clicks++}};
+  const document={dispatchEvent(){},querySelector:selector=>selector.startsWith('textarea')?ta:{disabled:false,getAttribute:()=>null,click:()=>clicks++}};
   const source=arena.match(/function driverSend\([\s\S]*?\n\}/)[0];
   await runInNewContext(`(${source})('hello')`,{
     document,HTMLTextAreaElement:TextArea,location:{origin:'https://arena.ai'},
-    KeyboardEvent:class{},Event:class{},setTimeout:fn=>fn()
+    KeyboardEvent:class{},Event:class{},InputEvent:class{},setTimeout:fn=>fn()
   });
   assert.equal(ta.text,'hello');
   assert.equal(clicks,0);
@@ -117,9 +117,13 @@ test('rendered markdown replacements produce the complete answer instead of corr
   ]});
   const result=await h.relay.arenaGenerateOnce({model:'max'},'',[{role:'user',content:'new question'}]);
   assert.equal(result.text,'bold');
-  for(const call of h.calls.filter(c=>['driverSend','driverSubmit','driverRead'].includes(c.name))){
-    assert.equal(call.target.documentIds?.[0],'doc-7');
+  for(const call of h.calls.filter(c=>['driverSend','driverSubmit'].includes(c.name))){
+    assert.equal(call.target.documentIds?.[0],'doc-7','pre-send calls pin the prepared document');
   }
+  const reads=h.calls.filter(c=>c.name==='driverRead');
+  assert.ok(reads.length>1,'the settle loop ran more than one read');
+  assert.equal(reads.at(-1).target.documentIds,undefined,'settle-loop reads follow the live document — the chat navigates to /c/<id> after send');
+  assert.equal(reads[0].target.documentIds?.[0],'doc-7','the pre-send baseline read may pin the prepared document');
 });
 
 test('Arena legal consent is handed back without clicking Agree',()=>{
@@ -249,7 +253,7 @@ test('a login wall is waited out; landing on arena without a composer lands on /
   await new Promise(r=>setTimeout(r,15));
   h2.setUrl('https://arena.ai/direct?model_a=max');
   assert.equal((await done2).signedIn,true);
-  assert.deepEqual(h2.updates.filter(u=>u.url).map(u=>u.url),['https://arena.ai/direct'],'exactly one landing navigation');
+  assert.deepEqual(h2.updates.filter(u=>u.url).map(u=>u.url),['https://arena.ai/text/direct'],'exactly one landing navigation');
 });
 
 test('a Terms dialog during sign-in is handed back untouched and the watcher stops',async()=>{
@@ -270,6 +274,94 @@ test('open-for-sign-in brings the tab forward and only navigates a tab that left
   assert.deepEqual(h.updates,[{active:true}],'mid-OAuth: activation only, no URL change');
   const h2=signinHarness({startUrl:'https://example.com/other'});
   await h2.relay.arenaOpenForSignIn();
-  assert.deepEqual(h2.updates.filter(u=>u.url).map(u=>u.url),['https://arena.ai/direct'],'a lost tab is brought home');
+  assert.deepEqual(h2.updates.filter(u=>u.url).map(u=>u.url),['https://arena.ai/text/direct'],'a lost tab is brought home');
   assert.ok(h2.updates.some(u=>u.active===true),'and it is foregrounded for the person');
+});
+
+// A small DOM stub with just enough selector support for driverRead: tag names, class
+// words, [class*="x"] and [attr="x"] matches, innerText, and a computed flex direction.
+function buildArenaDoc({domOrder=['assistant','user'],reversed=true,ariaDisabled=false,stop=false}={}){
+  const mk=(tag,cls='')=>({tagName:tag.toUpperCase(),className:cls,innerText:'',textContent:'',children:[],attrs:{},shadowRoot:null,
+    getAttribute(n){return this.attrs[n]??null;}});
+  const bubble=(cls,text)=>{const root=mk('div',cls);const prose=mk('div','prose');prose.innerText=text;root.children.push(prose);return root;};
+  const ol=mk('ol','mt-8 flex flex-col'+(reversed?'-reverse':''));
+  for(const kind of domOrder)ol.children.push(kind==='user'?bubble('group self-end justify-end','What is Orbit?'):bubble('bg-surface-primary min-w-0 flex-1','THE ANSWER BODY'));
+  const main=mk('main');
+  main.children.push(ol);
+  const send=mk('button');send.attrs={'aria-label':'Send message'};send.textContent='Send';if(ariaDisabled)send.attrs['aria-disabled']='true';
+  main.children.push(send);
+  if(stop){const b=mk('button');b.textContent='Stop';main.children.push(b);}
+  const body=mk('body');body.children.push(main);
+  const all=n=>{const out=[];const walk=x=>{for(const c of x.children){out.push(c);walk(c);}};walk(n);return out;};
+  const matchEl=(n,sel)=>{
+    for(const part of sel.split(',').map(x=>x.trim())){
+      let rest=part,ok=true;
+      const mTag=/^([a-zA-Z][a-zA-Z0-9-]*)/.exec(rest);
+      if(mTag){if(n.tagName.toLowerCase()!==mTag[1].toLowerCase())ok=false;rest=rest.slice(mTag[0].length);}
+      if(ok)for(const m of [...rest.matchAll(/\[([a-zA-Z-]+)(?:(\*?)="([^"]*)")?\]/g)]){
+        const actual=m[1]==='class'?String(n.className||''):(n.getAttribute(m[1])??null);
+        if(m[2]===undefined){if(m[3]!==undefined&&String(actual??'')!==m[3])ok=false;}
+        else if(!String(actual??'').includes(m[3]))ok=false;
+        rest=rest.replace(m[0],'');
+      }
+      if(ok)for(const mC of rest.matchAll(/\.([a-zA-Z0-9_-]+)/g))
+        if(!new RegExp('(?:^|\s)'+mC[1]+'(?:\s|$)').test(String(n.className||'')))ok=false;
+      if(ok)return true;
+    }
+    return false;
+  };
+  const withWalk=n=>{n.querySelectorAll=sel=>all(n).filter(x=>matchEl(x,sel));n.querySelector=sel=>n.querySelectorAll(sel)[0]||null;return n;};
+  const doc=withWalk(body);
+  for(const x of all(body))withWalk(x);
+  doc.computed=()=>({flexDirection:reversed?'column-reverse':'column'});
+  return doc;
+}
+
+test('driverRead classifies bubbles and reads the last assistant in visual order',()=>{
+  // flex-col-reverse: DOM order is [assistant, user], but the visual order is user, then assistant.
+  const doc=buildArenaDoc({domOrder:['assistant','user'],reversed:true});
+  const r=runDriver('driverRead',doc,'https://arena.ai',{getComputedStyle:doc.computed});
+  assert.equal(r.text,'THE ANSWER BODY','the newest assistant answer wins, not the DOM-last node');
+  assert.equal(r.userText,'What is Orbit?','the person prompt travels with the read');
+  assert.match(r.census,/list=ol/);
+  assert.match(r.census,/rev=1/);
+  assert.equal(r.idle,true);
+  assert.equal(r.generating,false);
+});
+
+test('driverRead survives column order and never returns the prompt echo',()=>{
+  const doc=buildArenaDoc({domOrder:['user','assistant'],reversed:false});
+  const r=runDriver('driverRead',doc,'https://arena.ai',{getComputedStyle:doc.computed});
+  assert.equal(r.text,'THE ANSWER BODY');
+  const onlyUser=buildArenaDoc({domOrder:['user'],reversed:false});
+  const r2=runDriver('driverRead',onlyUser,'https://arena.ai',{getComputedStyle:onlyUser.computed});
+  assert.equal(r2.text,'','a lone user bubble is never returned as an answer');
+});
+
+test('aria-disabled and a stop button change the read contract',()=>{
+  const doc=buildArenaDoc({domOrder:['assistant','user'],reversed:true,ariaDisabled:true,stop:true});
+  const r=runDriver('driverRead',doc,'https://arena.ai',{getComputedStyle:doc.computed});
+  assert.equal(r.generating,true);
+  assert.equal(r.idle,false,'aria-disabled on send counts as busy, exactly like disabled');
+});
+
+test('driverSubmit refuses an aria-disabled send button',()=>{
+  const doc=buildArenaDoc({domOrder:['assistant','user'],reversed:true,ariaDisabled:true});
+  const main=doc.querySelector('main');
+  const ta={tagName:'TEXTAREA',className:'',children:[],attrs:{},value:'What is Orbit?',getAttribute(n){return this.attrs[n]??null;}};
+  main.children.push(ta); // the composer: without it driverSubmit refuses with composer-changed
+  const source=arena.match(/function driverSubmit\([\s\S]*?\n\}/)[0];
+  const out=runInNewContext(`(${source})('What is Orbit?')`,{document:doc,location:{href:'https://arena.ai/c/abc',origin:'https://arena.ai'}});
+  assert.equal(out.error,'send-disabled');
+});
+
+test('the echo of the prompt never settles as an answer',async()=>{
+  const h=relayHarness({reads:[{text:'What is Orbit?',count:1,idle:true,generating:false,census:'list=ol roots=2 msgs=2 rev=1'}]});
+  await assert.rejects(h.relay.arenaGenerateOnce({model:'max'},'',[{role:'user',content:'What is Orbit?'}]),/did not start/);
+});
+
+test('a timeout error carries the DOM census for diagnosis',async()=>{
+  const reads=[{text:'a'.repeat(50),count:1,idle:true,generating:false,census:'list=ol roots=2 msgs=2'},{text:'b'.repeat(50),count:2,idle:true,generating:false,census:'list=ol roots=3 msgs=3'}];
+  const h=relayHarness({reads,onDriver:name=>{if(name==='driverRead')reads.reverse();}});
+  await assert.rejects(h.relay.arenaGenerateOnce({model:'max'},'',[{role:'user',content:'q'}]),/timed out.*\[list=ol/);
 });

@@ -162,11 +162,22 @@ test('the Arena dock mirrors the relay inside Orbit — a view, never an embed',
   assert.match(app,/const ARENA_DOCK_LABEL=\{idle:'Not connected'/);
   assert.match(app,/function arenaDockSet\(/);
   assert.match(app,/async function arenaDockPoll\(\)/,'the dock peeks at the relay tab rather than guessing');
-  assert.match(app,/arenaAuthPeek/);
+  assert.match(app,/arenaDockPeek/);
   assert.match(app,/renderArenaDock\(\);if\(\$\('settingsDialog'\)\?\.open\)/,'render() repaints the dock');
   assert.match(app,/state\.arenaDock=\$\('arenaDockOn'\)\.checked/,'the Settings checkbox persists the dock');
   assert.match(app,/dock\.hidden=state\.arenaDock!==true/,'Hide is a persisted setting, not a session-only fiddle');
   assert.match(styles,/main\{grid-template-rows:auto auto auto minmax\(0,1fr\) auto auto\}/,'the dock has its own template row');
   assert.match(styles,/#arenaDock\{grid-row:2\}/);
   assert.match(styles,/#messages\{grid-row:4\}/,'the transcript keeps the 1fr row with the dock present');
+});
+
+test('the two-sided flow: the dock pulls, the run can skip Arena, ingestion is recorded',()=>{
+  assert.match(html,/id="arenaDockPull"/,'the Pull into Orbit button exists in the dock');
+  assert.match(app,/'new-answer':'New answer ready — pull it in'/,'the dock announces answers it did not request');
+  assert.match(app,/\$\('arenaDockPull'\)\.onclick=safe\(async\(\)=>\{/);
+  assert.match(app,/provenance:'Arena · pulled'/,'a pulled answer is attributed, never passed off as Orbit\'s own');
+  assert.match(app,/opts\?\.briefOverride/,'runResearch can skip the Arena stage entirely');
+  assert.match(app,/await runResearch\('',\{briefOverride:text,question\}\)/,'the fan-out card reuses the pipeline');
+  assert.equal((app.match(/arenaLastAnswerFp=arenaAnswerFingerprint\(/g)||[]).length>=4,true,'every ingestion point records its fingerprint');
+  assert.match(app,/const st=await arenaDockPeek\(\)/,'the poll peeks the relay tab read-only');
 });
