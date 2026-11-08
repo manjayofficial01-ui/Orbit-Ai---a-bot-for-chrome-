@@ -19,12 +19,12 @@ const presets={openai:'https://api.openai.com/v1',xai:'https://api.x.ai/v1',goog
 const presetOverrides={google:{tokenField:'max_tokens'}};
 const defaults={base:presets.openai,model:'',format:'chat',transport:'',temperature:'',maxTokens:'',tokenField:'max_completion_tokens',effort:'',search:false,xsearch:false,code:false,instructions:'',memory:'',saveHistory:true,smartContext:true,contextDepth:'balanced',autoTitle:true,autoSafeActions:false,autoPilot:false};
 const fields=['base','model','format','temperature','maxTokens','tokenField','effort','search','xsearch','code','instructions','memory','saveHistory','smartContext','contextDepth','autoTitle','autoSafeActions','autoPilot'];
-let state={chats:[],current:'',provider:'openai',profiles:{},theme:'system',skin:'midnight',fontSize:'medium',recentChats:[],recentIndex:-1,tasks:[],checkin:{lastRunAt:0,hidden:[],suggestions:[]},roster:normalizeRoster(),routines:[],autoSpeak:false,voiceURI:''},keys={},modelCache={},busy=false,controller,ownsWorkspace=false,releaseLock,pending=[],preview,selectionId,saveQueue=Promise.resolve(),storageWritable=true;
+let state={chats:[],current:'',provider:'openai',profiles:{},theme:'system',skin:'midnight',fontSize:'medium',recentChats:[],recentIndex:-1,tasks:[],checkin:{lastRunAt:0,hidden:[],suggestions:[]},roster:normalizeRoster(),routines:[],autoSpeak:false,voiceURI:'',arenaDock:true},keys={},modelCache={},busy=false,controller,ownsWorkspace=false,releaseLock,pending=[],preview,selectionId,saveQueue=Promise.resolve(),storageWritable=true;
 let memoriesCache=[];
 // Cards that are waiting for an answer, by requestId. The promise is what the operator loop
 // is blocked on; the map is what lets a repaint, a chat switch or a Stop find it again.
 let cardResolvers=new Map();
-let ui={navHidden:false,sidebarWidth:272,rosterFilter:null,skin:null};
+let ui={navHidden:false,sidebarWidth:272,rosterFilter:null,skin:null,arenaDockCollapsed:false};
 const SKINS={midnight:{dark:true,label:'Midnight'},daylight:{dark:false,label:'Daylight'},atelier:{dark:false,label:'Atelier'},foundry:{dark:true,label:'Foundry'}};
 const SKIN_ORDER=['midnight','daylight','atelier','foundry'];
 // The effective configuration: the workspace profile, plus the persona's model override when
@@ -149,6 +149,7 @@ let arenaSigninRunning=false;
 async function ensureArenaSignedIn({signal,card=true,say=status}={}){
   if(arenaSigninRunning)return {ok:false,error:'A sign-in is already being watched — finish it in the Arena tab, then press Resume on its card.'};
   arenaSigninRunning=true;
+  arenaDockSet('waiting');
   try{
     const arena=await import('./arena.js');
     let signinCard=null,clicked=null;
@@ -169,13 +170,72 @@ async function ensureArenaSignedIn({signal,card=true,say=status}={}){
     else if(typeof won==='string'&&won!=='cancel')settle=won; // 'Resume now', or 'Stopped' from cancelPendingCards
     else if(won&&won.error)settle=/timed out/i.test(won.error.message)?'Timed out':'Stopped';
     if(signinCard&&!isSettled(signinCard))answerCard(signinCard,settle);
-    if(won&&won.error){say(won.error.message);return {ok:false,error:won.error.message};}
-    if(won==='cancel'){say('Sign-in dismissed. Send again when you are signed in.');return {ok:false,error:'cancelled'};}
+    if(won&&won.error){say(won.error.message);arenaDockSet('failed',{error:won.error.message});return {ok:false,error:won.error.message};}
+    if(won==='cancel'){say('Sign-in dismissed. Send again when you are signed in.');arenaDockSet('idle');return {ok:false,error:'cancelled'};}
     say('Arena is signed in.');
+    arenaDockSet('signed-in');
     return {ok:true};
   }catch(e){return {ok:false,error:String(e?.message||e)};}
   finally{arenaSigninRunning=false;}
 }
+// ---------------------------------------------------------------------------
+// The Arena dock — Arena's state mirrored inside Orbit. arena.ai itself forbids
+// being framed (X-Frame-Options + frame-ancestors), so this is not an embed: it is
+// Orbit showing you what its relay sees, and a place to reach the tab from. One
+// component serves both surfaces — the side panel and the full-tab workspace are
+// the same page.
+// ---------------------------------------------------------------------------
+const ARENA_DOCK_PREVIEW_CHARS=600;
+const ARENA_DOCK_LABEL={idle:'Not connected','signed-in':'Signed in','signed-out':'Signed out',waiting:'Waiting for you to sign in',generating:'Generating…',done:'Answer ready',failed:'Failed'};
+const arenaDockState={phase:'idle',model:'',preview:'',error:''};
+function arenaDockSet(phase,{model,preview,error}={}){
+  if(!Object.prototype.hasOwnProperty.call(ARENA_DOCK_LABEL,phase))return;
+  arenaDockState.phase=phase;
+  if(model!==undefined)arenaDockState.model=String(model||'');
+  if(preview!==undefined)arenaDockState.preview=String(preview||'').slice(-ARENA_DOCK_PREVIEW_CHARS);
+  if(error!==undefined)arenaDockState.error=String(error||'').slice(0,200);
+  renderArenaDock();
+}
+function renderArenaDock(){
+  const dock=$('arenaDock');
+  if(!dock)return;
+  dock.hidden=state.arenaDock!==true;
+  if(dock.hidden)return;
+  $('arenaDockStatus').textContent=ARENA_DOCK_LABEL[arenaDockState.phase]||'…';
+  $('arenaDockModel').textContent=arenaDockState.model?' · '+arenaDockState.model:'';
+  const body=$('arenaDockBody');
+  body.hidden=ui.arenaDockCollapsed===true;
+  $('arenaDockHead').setAttribute('aria-expanded',String(!body.hidden));
+  $('arenaDockPreview').textContent=arenaDockState.preview||arenaDockState.error||'Nothing from Arena yet. Research with Arena — or chat while Arena is your provider — and the answer shows up here.';
+}
+// The dock stays honest between runs: while nothing is in flight it peeks at the relay
+// tab's auth state (read-only, never focuses it) every ten seconds. Anything it cannot
+// know leaves the phase untouched.
+async function arenaDockPoll(){
+  const dock=$('arenaDock');
+  if(!dock||dock.hidden)return;
+  if(arenaDockState.phase==='generating'||arenaDockState.phase==='waiting')return;
+  let granted=false;
+  try{granted=await chrome.permissions.contains({origins:[hostPattern(presets.arena)]});}catch{}
+  if(!granted){arenaDockSet('idle',{error:'Arena is not granted yet — press Connect Arena…'});return;}
+  try{
+    const {arenaAuthPeek}=await import('./arena.js');
+    const st=await arenaAuthPeek();
+    if(st?.error==='terms-required')arenaDockSet('idle',{error:'Review Arena’s Terms of Use in the relay tab yourself.'});
+    else if(st?.composer)arenaDockSet('signed-in');
+    else if(st?.wall==='login')arenaDockSet('signed-out');
+  }catch{/* no relay tab, a closed tab, or an unreadable page: keep the current phase */}
+}
+$('arenaDockHead').onclick=()=>{ui.arenaDockCollapsed=ui.arenaDockCollapsed!==true;persistUI();renderArenaDock();};
+$('arenaDockHide').onclick=safe(async()=>{state.arenaDock=false;await save();renderArenaDock();});
+$('arenaDockConnect').onclick=safe(async()=>{
+  if(!await chrome.permissions.contains({origins:[hostPattern(presets.arena)]}))await grant({transport:'arena',base:presets.arena});
+  const res=await ensureArenaSignedIn({card:false,say:t=>{$('arenaDockStatus').textContent=t;}});
+  if(!res.ok)arenaDockSet('failed',{error:res.error});
+});
+$('arenaDockOpen').onclick=safe(async()=>{const {arenaOpenForSignIn}=await import('./arena.js');await arenaOpenForSignIn();status('The Arena tab is in front.');});
+$('arenaDockOn').onchange=safe(async()=>{state.arenaDock=$('arenaDockOn').checked;await save();renderArenaDock();});
+setInterval(()=>{safe(arenaDockPoll)();},10000);
 // ---------------------------------------------------------------------------
 // Personas
 // ---------------------------------------------------------------------------
@@ -830,6 +890,7 @@ async function runResearch(rawQuestion){
     await save();
     const {arenaGenerate}=await import('./arena.js');
     say('[step · step '+(++step)+'] Sending the question to Arena ('+arenaModel+') — one message from your daily credits…');
+    arenaDockSet('generating',{model:arenaModel,preview:''});
     const arenaCfg={transport:'arena',base:presets.arena,model:arenaModel};
     const briefMsg={role:'assistant',content:'',state:'streaming',sources:[],provenance:'Arena · '+arenaModel};
     chat.messages.push(briefMsg);
@@ -837,7 +898,7 @@ async function runResearch(rawQuestion){
     const runArena=()=>arenaGenerate(arenaCfg,'',[
       {role:'system',content:'You are the research engine in Orbit’s pipeline. Produce exactly the brief the instructions ask for.'},
       {role:'user',content:buildResearchPrompt(question)},
-    ],{signal:controller.signal,onText:d=>{briefText+=d;briefMsg.content=briefText;paint();},timeoutMs:RESEARCH_STAGE_TIMEOUT.arena});
+    ],{signal:controller.signal,onText:d=>{briefText+=d;briefMsg.content=briefText;paint();arenaDockSet('generating',{preview:briefText});},timeoutMs:RESEARCH_STAGE_TIMEOUT.arena});
     try{
       await runArena();
     }catch(e){
@@ -853,6 +914,7 @@ async function runResearch(rawQuestion){
     briefText=String(briefText||'');
     if(!briefText.trim())throw Error('Arena returned an empty brief.');
     say('[ok · step '+(++step)+'] Brief received ('+briefText.length.toLocaleString()+' characters).');
+    arenaDockSet('done',{preview:briefText});
     if(!researchers.length){
       say('[step · step '+(++step)+'] The roster has no other personas, so the brief goes straight to synthesis. Add personas in the roster strip to fan research out.');
     }else{
@@ -898,6 +960,7 @@ async function runResearch(rawQuestion){
     runMsg.state=stopped?'interrupted':'failed';
     runMsg.content=stopped?'Research stopped. Partial output above is retained.':'Research failed: '+e.message;
     status(stopped?'Stopped. Partial output retained.':e.message);
+    if(stopped)arenaDockSet('idle');else arenaDockSet('failed',{error:e.message});
   }finally{
     clearTimeout(timer);clearPresence();busy=false;controller=null;controls();renderMessages();renderNeedsYou();await save();
   }
@@ -926,10 +989,11 @@ function researchToolsFor({signal,onNote}={}){
         if(!await chrome.permissions.contains({origins:[hostPattern(presets.arena)]}))return {ok:false,error:'The arena.ai host grant is missing — the person can grant it in Settings → Arena → Connect Arena.'};
         const {arenaGenerate}=await import('./arena.js');
         let text='';
+        arenaDockSet('generating',{model:arenaCfg.model,preview:''});
         const run=()=>arenaGenerate(arenaCfg,'',[
           {role:'system',content:'You are the research engine in Orbit’s pipeline. Produce exactly the brief the instructions ask for.'},
           {role:'user',content:buildResearchPrompt(q)},
-        ],{signal:sig,onText:d=>{text+=d;},timeoutMs:RESEARCH_STAGE_TIMEOUT.arena});
+        ],{signal:sig,onText:d=>{text+=d;arenaDockSet('generating',{preview:text});},timeoutMs:RESEARCH_STAGE_TIMEOUT.arena});
         try{await run();}
         catch(e){
           if(e?.arenaLogin&&!sig?.aborted){
@@ -943,6 +1007,7 @@ function researchToolsFor({signal,onNote}={}){
         text=String(text||'').trim();
         if(!text)return {ok:false,error:'Arena returned an empty brief.'};
         note('Arena brief received ('+text.length.toLocaleString()+' characters).');
+        arenaDockSet('done',{preview:text});
         return {ok:true,detail:text.length>RESEARCH_TOOL_TEXT_BUDGET?text.slice(0,RESEARCH_TOOL_TEXT_BUDGET)+'\n\n[Truncated — the full brief is '+text.length.toLocaleString()+' characters.]':text};
       }catch(e){return {ok:false,error:String(e?.message||e)};}
     },
@@ -1002,7 +1067,7 @@ function presenceWatch(){
 }
 function renderMessages(){const box=$('messages'),chat=current();box.replaceChildren();if(!chat?.messages.length){const w=element('div',undefined,'welcome');w.append(element('div','◉','orb'),element('h1','Your browser, with better follow-through.'),element('p','Ask about the current page, attach a screenshot, or let Orbit handle a supervised web task.'));const points=element('ul',undefined,'welcome-points');points.setAttribute('aria-label','What makes Orbit different');for(const t of ['Bring your own key: any provider, no credits','Ollama and other local models work too','Every action step waits for your approval','No account, no telemetry — open source'])points.append(element('li',t));const s=element('div',undefined,'suggestions');for(const t of ['Summarize and explain this page','Compare the key claims with reliable sources','Fill this form using the details I provide']){const b=element('button',t);b.onclick=()=>{$('prompt').value=t;$('prompt').focus();};s.append(b);}w.append(points,s);box.append(w);}else chat.messages.forEach((m,i)=>{const article=drawMessage(m,i);box.append(article);const chips=drawReplyChips(chat,i,m);if(chips)box.append(chips);});$('title').textContent=chat?.title||'New conversation';if($('speak'))$('speak').hidden=!latestAnswer();}
 function renderAttachments(){$('attachments').replaceChildren();pending.forEach((x,i)=>{const b=element('button',(x.kind==='screenshot'?'Screenshot: ':'')+x.title+' ×');b.title='Remove reference';b.onclick=()=>{pending.splice(i,1);renderAttachments();};$('attachments').append(b);});}
-function render(){renderRoster();renderChatHead();renderHistory();renderMessages();renderTaskBar();renderAttachments();connection();updateNavigation();renderNeedsYou();if($('settingsDialog')?.open)renderPersonasSettings();}
+function render(){renderRoster();renderChatHead();renderHistory();renderMessages();renderTaskBar();renderAttachments();connection();updateNavigation();renderNeedsYou();renderArenaDock();if($('settingsDialog')?.open)renderPersonasSettings();}
 async function deleteMessage(index){if(busy)throw Error('Stop the current answer before deleting messages.');const chat=current();if(!chat||!ownsWorkspace)return;if(!Number.isInteger(index)||index<0||index>=chat.messages.length)return;const target=chat.messages[index];if(!await askConfirm({title:'Delete this '+(target.role==='assistant'?'Orbit answer':'message')+'?',body:'It is removed from this device only.',confirmLabel:'Delete',cancelLabel:'Keep',danger:true}))return;chat.messages.splice(index,1);renderMessages();await save();}
 function controls(){for(const id of ['new','regenerate','export','attach','agent','agentMode','checkin','settings','expand','float'])if($(id))$(id).disabled=busy;$('send').disabled=busy;$('stop').hidden=!busy;renderHistory();renderTasks();}
 function referenceText(ref){if(ref.kind==='screenshot')return `\n\n<user_screenshot>\nTitle: ${ref.title}\nURL: ${ref.url||''}\nImage data URL: ${ref.dataUrl}\n</user_screenshot>`;return `\n\n<untrusted_reference>\nTitle: ${ref.title}\nURL: ${ref.url||''}\n${ref.text}\n</untrusted_reference>`;}
@@ -1019,7 +1084,7 @@ async function maybeSmartContext(){const cfg=config();if(!cfg.smartContext||pend
 async function ensureChat(){let chat=current();if(chat)return chat;const keep=structuredClone(pending);await newChat();chat=current();pending=keep;renderAttachments();return chat;}
 async function send(regenerate=false,{skipContext=false}={}){if(busy||!ownsWorkspace)return;
   if(!regenerate){const typed=$('prompt').value.trim(),slash=typed?parseSlashCommand(typed):null;if(slash?.skill?.slug==='research'){const rest=slash.rest.trim();if(!rest)throw Error('Add the question after /research — e.g. /research What changed in this field this year?');$('prompt').value='';growPrompt();return runResearch(rest);}}
-  const cfg=config();cfg.base=normalizeBase(cfg.base);if(!cfg.model)throw Error('Open Settings and choose a model.');if(!await chrome.permissions.contains({origins:[hostPattern(cfg.base)]}))throw Error('Open Settings and grant provider access.');const key=keyFor(cfg.base);if(!key&&!isLoopback(cfg.base)&&cfg.transport!=='arena')throw Error('Open Settings and save your API key once.');let chat=await ensureChat();let user;if(regenerate){if(chat.messages.at(-1)?.role!=='assistant')throw Error('There is no answer to regenerate.');}else{const text=$('prompt').value.trim();if(!text)return;if(!skipContext)await maybeSmartContext();const mention=matchMention(text,state.roster);if(mention){chat.persona=mention.persona.id;state.roster=selectPersona(state.roster,mention.persona.id);Object.assign(cfg,config());cfg.base=normalizeBase(cfg.base);}user={role:'user',content:mention?mention.rest:text,refs:structuredClone(pending)};chat.messages.push(user);}let messages;try{messages=buildMessages(regenerate?{...chat,messages:chat.messages.slice(0,-1)}:chat);requestBody(cfg,messages);}catch(e){if(user)chat.messages.pop();throw e;}if(regenerate)chat.messages.pop();else{$('prompt').value='';growPrompt();pending=[];if(chat.title==='New conversation'&&cfg.autoTitle)chat.title=(parseSlashCommand(user.content)?.rest||user.content).replace(/^\W+/,'').slice(0,58)||'New conversation';}const answer={role:'assistant',content:'',state:'streaming',sources:[]};chat.messages.push(answer);busy=true;controller=new AbortController();controls();render();status('Connecting…');const clearPresence=presenceWatch();let lastCheckpoint=0,lastPaint=0;const timer=setTimeout(()=>controller.abort(),300000);try{await save();await generate(cfg,key,messages,{signal:controller.signal,onText:delta=>{answer.content+=delta;if(answer.content.length>250000){controller.abort();throw Error('Output reached the size cap.');}const now=Date.now();if(now-lastPaint>75){renderMessages();$('messages').scrollTop=$('messages').scrollHeight;lastPaint=now;}if(now-lastCheckpoint>1500){lastCheckpoint=now;save().catch(e=>status('Checkpoint failed: '+e.message));}status('Generating…');},onSources:items=>{for(const s of items)if(!answer.sources.some(x=>x.url===s.url))answer.sources.push(s);},onUsage:usage=>{if(usage)answer.usage=usage;},onSearch:phase=>status('Provider web search: '+phase)});answer.state='complete';status('Done.');if(state.autoSpeak&&speechAvailable())speak(answer.content,{voiceURI:state.voiceURI||''}).catch(()=>{});}catch(e){answer.state=controller.signal.aborted?'interrupted':'failed';status(controller.signal.aborted?'Stopped or timed out. Partial output retained.':e.message);if(e?.arenaLogin&&!controller.signal.aborted)ensureArenaSignedIn({card:true}).catch(()=>{});}finally{clearTimeout(timer);clearPresence();busy=false;controller=null;controls();renderMessages();await save();}}
+  const cfg=config();cfg.base=normalizeBase(cfg.base);if(!cfg.model)throw Error('Open Settings and choose a model.');if(!await chrome.permissions.contains({origins:[hostPattern(cfg.base)]}))throw Error('Open Settings and grant provider access.');const key=keyFor(cfg.base);if(!key&&!isLoopback(cfg.base)&&cfg.transport!=='arena')throw Error('Open Settings and save your API key once.');let chat=await ensureChat();let user;if(regenerate){if(chat.messages.at(-1)?.role!=='assistant')throw Error('There is no answer to regenerate.');}else{const text=$('prompt').value.trim();if(!text)return;if(!skipContext)await maybeSmartContext();const mention=matchMention(text,state.roster);if(mention){chat.persona=mention.persona.id;state.roster=selectPersona(state.roster,mention.persona.id);Object.assign(cfg,config());cfg.base=normalizeBase(cfg.base);}user={role:'user',content:mention?mention.rest:text,refs:structuredClone(pending)};chat.messages.push(user);}let messages;try{messages=buildMessages(regenerate?{...chat,messages:chat.messages.slice(0,-1)}:chat);requestBody(cfg,messages);}catch(e){if(user)chat.messages.pop();throw e;}if(regenerate)chat.messages.pop();else{$('prompt').value='';growPrompt();pending=[];if(chat.title==='New conversation'&&cfg.autoTitle)chat.title=(parseSlashCommand(user.content)?.rest||user.content).replace(/^\W+/,'').slice(0,58)||'New conversation';}const answer={role:'assistant',content:'',state:'streaming',sources:[]};chat.messages.push(answer);busy=true;controller=new AbortController();controls();render();status('Connecting…');const clearPresence=presenceWatch();let lastCheckpoint=0,lastPaint=0;const timer=setTimeout(()=>controller.abort(),300000);try{await save();if(cfg.transport==='arena')arenaDockSet('generating',{model:cfg.model,preview:''});await generate(cfg,key,messages,{signal:controller.signal,onText:delta=>{answer.content+=delta;if(answer.content.length>250000){controller.abort();throw Error('Output reached the size cap.');}const now=Date.now();if(now-lastPaint>75){renderMessages();$('messages').scrollTop=$('messages').scrollHeight;lastPaint=now;}if(now-lastCheckpoint>1500){lastCheckpoint=now;save().catch(e=>status('Checkpoint failed: '+e.message));}status('Generating…');if(cfg.transport==='arena')arenaDockState.preview=String(answer.content).slice(-ARENA_DOCK_PREVIEW_CHARS);},onSources:items=>{for(const s of items)if(!answer.sources.some(x=>x.url===s.url))answer.sources.push(s);},onUsage:usage=>{if(usage)answer.usage=usage;},onSearch:phase=>status('Provider web search: '+phase)});answer.state='complete';status('Done.');if(cfg.transport==='arena')arenaDockSet('done',{preview:answer.content});if(state.autoSpeak&&speechAvailable())speak(answer.content,{voiceURI:state.voiceURI||''}).catch(()=>{});}catch(e){answer.state=controller.signal.aborted?'interrupted':'failed';status(controller.signal.aborted?'Stopped or timed out. Partial output retained.':e.message);if(cfg.transport==='arena'&&!controller.signal.aborted&&!e?.arenaLogin)arenaDockSet('failed',{error:e.message});else if(cfg.transport==='arena'&&controller.signal.aborted)arenaDockSet('idle');if(e?.arenaLogin&&!controller.signal.aborted)ensureArenaSignedIn({card:true}).catch(()=>{});}finally{clearTimeout(timer);clearPresence();busy=false;controller=null;controls();renderMessages();await save();}}
 function explainProbeFailure(message,format){
  const status=Number(/Provider HTTP (\d{3})/.exec(message)?.[1]||0);
  if(status===401||status===403)return `The provider refused this request (HTTP ${status}). Your key may be missing, expired, unpaid, or not permitted for that model. This is separate from the model list, which can fail for other reasons.`;
@@ -1035,12 +1100,14 @@ async function testConnection(){
  await grant(c);
  if(c.transport==='arena'){
   $('settingsStatus').textContent=`Asking ${c.model} through your Arena tab — this uses one message from your daily credits…`;
+  arenaDockSet('generating',{model:c.model});
   const started=Date.now();let text;
   try{({text}=await generateOnce(c,'',[{role:'user',content:'Reply with exactly this word and nothing else: OK'}],{timeoutMs:120000}));}
-  catch(e){throw Error(String(e&&e.message||e).slice(0,400));}
+  catch(e){arenaDockSet('failed',{error:String(e&&e.message||e)});throw Error(String(e&&e.message||e).slice(0,400));}
   const answer=String(text||'').trim(),ms=Date.now()-started;
   if(!answer)throw Error(`${c.model} answered but returned no text. Try another model slug from the Arena picker.`);
   $('settingsStatus').textContent=`${c.model} is working through Arena — answered in ${ms} ms: "${answer.slice(0,60)}". One message was used from your daily credits.`;
+  arenaDockSet('done',{preview:answer});
   return answer;
  }
  const key=$('key').value.trim()||keyFor(c.base);
@@ -1060,7 +1127,7 @@ async function testConnection(){
  return answer;
 }
 function fillModels(models,selected=''){const select=$('modelSelect'),list=$('modelList');select.replaceChildren();list.replaceChildren();const blank=element('option',models.length?'Choose a discovered model':'Fetch models or enter an ID');blank.value='';select.append(blank);for(const id of models){const o=element('option',id);o.value=id;select.append(o);const d=element('option');d.value=id;list.append(d);}if(selected&&models.includes(selected))select.value=selected;}
-function loadProfile(id){const p={...defaults,...(presetOverrides[id]||{}),base:presets[id],...state.profiles[id]};for(const f of fields){const el=$(f);if(!el)continue;if(typeof p[f]==='boolean')el.checked=p[f];else el.value=p[f]??'';}$('key').value='';const saved=keyFor(p.base);$('key').placeholder=saved?'Saved key ••••••••':'Enter once and save';$('keyHint').textContent=saved?'A key is saved for this endpoint. Leave blank to keep it.':'No key saved for this endpoint.';fillModels(modelCache[p.base]||[],p.model);$('settingsStatus').textContent='';const arena=id==='arena';$('base').readOnly=arena;$('key').disabled=arena;$('toggleKey').disabled=arena;for(const f of ['format','temperature','maxTokens','tokenField','effort','search','xsearch','code'])$(f).disabled=arena;if(arena){$('keyHint').textContent='Arena uses your signed-in browser tab — no API key needed.';$('model').placeholder='e.g. deepseek-v4.1-flash-high';}else{$('model').placeholder='Auto-selected or enter manually';}const note=$('arenaNote');if(note)note.hidden=!arena;const connectRow=$('arenaConnectRow');if(connectRow)connectRow.hidden=!arena;}
+function loadProfile(id){const p={...defaults,...(presetOverrides[id]||{}),base:presets[id],...state.profiles[id]};for(const f of fields){const el=$(f);if(!el)continue;if(typeof p[f]==='boolean')el.checked=p[f];else el.value=p[f]??'';}$('key').value='';const saved=keyFor(p.base);$('key').placeholder=saved?'Saved key ••••••••':'Enter once and save';$('keyHint').textContent=saved?'A key is saved for this endpoint. Leave blank to keep it.':'No key saved for this endpoint.';fillModels(modelCache[p.base]||[],p.model);$('settingsStatus').textContent='';const arena=id==='arena';$('base').readOnly=arena;$('key').disabled=arena;$('toggleKey').disabled=arena;for(const f of ['format','temperature','maxTokens','tokenField','effort','search','xsearch','code'])$(f).disabled=arena;if(arena){$('keyHint').textContent='Arena uses your signed-in browser tab — no API key needed.';$('model').placeholder='e.g. deepseek-v4.1-flash-high';}else{$('model').placeholder='Auto-selected or enter manually';}const note=$('arenaNote');if(note)note.hidden=!arena;const connectRow=$('arenaConnectRow');if(connectRow)connectRow.hidden=!arena;const dockRow=$('arenaDockRow');if(dockRow)dockRow.hidden=!arena;const dockOn=$('arenaDockOn');if(dockOn)dockOn.checked=state.arenaDock===true;}
 function readConfig(){const c={};for(const f of fields){const el=$(f);if(!el)continue;c[f]=['search','xsearch','code','saveHistory','smartContext','autoTitle','autoSafeActions','autoPilot'].includes(f)?el.checked:el.value.trim();}c.base=normalizeBase(c.base);if($('provider').value==='arena'){c.transport='arena';c.base=presets.arena;}return c;}
 async function grant(c){const ok=await chrome.permissions.request({origins:[hostPattern(c.base)]});if(!ok)throw Error('Provider access was not granted.');}
 async function discoverModels({quiet=false}={}){const c=readConfig();await grant(c);if(c.transport==='arena'){$('settingsStatus').textContent='Reading the Arena model picker…';const {arenaListModels}=await import('./arena.js');const models=await arenaListModels();modelCache[c.base]=models;fillModels(models,c.model);if(!c.model){$('model').value=models[0];$('modelSelect').value=models[0];}$('settingsStatus').textContent=`Listed ${models.length} Arena model${models.length===1?'':'s'}. Listing only proves the picker opened — press Test connection to check a model actually generates.`;if(!quiet)await writeLocal({orbitModels:modelCache});return models;}$('settingsStatus').textContent='Fetching the model list…';const entered=$('key').value.trim(),key=entered||keyFor(c.base),response=await fetch(c.base+'/models',{headers:key?{Authorization:'Bearer '+key}:{},credentials:'omit',redirect:'error',referrerPolicy:'no-referrer',signal:AbortSignal.timeout(20000)});if(!response.ok)throw Error(`Model list unavailable (HTTP ${response.status}). That is only the list endpoint — your model can still work. Set the model ID and press Test connection.`);const text=await response.text();if(text.length>2000000)throw Error('Model list too large.');const data=JSON.parse(text),models=[...new Set((Array.isArray(data)?data:data.data||data.models||[]).map(x=>typeof x==='string'?x:x?.id||x?.name).filter(Boolean))].slice(0,4000).sort();if(!models.length)throw Error('The provider returned no recognizable model IDs. That is only the list endpoint — set the model ID and press Test connection.');modelCache[c.base]=models;fillModels(models,c.model);if(!c.model){$('model').value=models[0];$('modelSelect').value=models[0];}$('settingsStatus').textContent=`Listed ${models.length} model${models.length===1?'':'s'}. Listing only proves the endpoint answers — press Test connection to check a model actually generates.`;if(!quiet)await writeLocal({orbitModels:modelCache});return models;}

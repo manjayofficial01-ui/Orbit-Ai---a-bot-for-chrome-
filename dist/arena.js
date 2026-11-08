@@ -275,3 +275,13 @@ export async function arenaWaitSignedIn({signal,timeoutMs=300000}={}){
     if(!landed){landed=true;await chrome.tabs.update(id,{url:ORIGIN+'/direct'}).catch(()=>{});}
   }
 }
+
+/** Read the relay tab's auth state without creating or focusing anything. Throws when there is no usable relay tab — the dock treats that as "not connected". */
+export async function arenaAuthPeek(){
+  let id=null;
+  try{({arenaRelayTab:id}=await chrome.storage.session.get('arenaRelayTab'));}catch{}
+  if(id==null)throw Error('no relay tab yet');
+  const t=await chrome.tabs.get(id);
+  if(!String(t.url||'').startsWith(ORIGIN))return {wall:'off-origin'};
+  return await exec(id,driverAuthState);
+}

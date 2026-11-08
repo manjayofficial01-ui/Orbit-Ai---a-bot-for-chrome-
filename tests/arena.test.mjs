@@ -191,6 +191,7 @@ test('Arena is a first-class, keyless preset wired through the transport',()=>{
   assert.equal((app.match(/cfg\.transport!=='arena'\)throw Error\('Open Settings and save your API key once/g)||[]).length,2);
   assert.match(app,/c\.transport!=='arena'\)throw Error\('Enter an API key/);
   assert.match(app,/cfg\.transport!=='arena'\)throw Error\('Save your API key in Settings/);
+  assert.match(arena,/export async function arenaAuthPeek\(\)/,'the dock can peek at the relay tab without creating or focusing it');
 });
 
 // The sign-in watcher against a scripted tab: the URL field is what driverAuthState

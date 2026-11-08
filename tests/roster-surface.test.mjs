@@ -151,3 +151,22 @@ test('the Arena research pipeline is wired: menu, slash command, provenance, sig
   assert.match(agentRun,/researchTools\?\.askPersona/,'the agent loop can consult a persona');
   assert.match(app,/researchTools:researchToolsFor\(\{signal:controller\.signal,onNote:say\}\)/,'the panel run passes its handlers');
 });
+
+test('the Arena dock mirrors the relay inside Orbit — a view, never an embed',()=>{
+  assert.match(html,/id="arenaDock"/);
+  assert.match(html,/id="arenaDockStatus"/);
+  assert.match(html,/id="arenaDockPreview"/);
+  assert.match(html,/id="arenaDockConnect"/);
+  assert.match(html,/id="arenaDockOn"/);
+  assert.doesNotMatch(html,/<iframe/i,'arena.ai forbids framing; the extension page must not embed anything');
+  assert.match(app,/const ARENA_DOCK_LABEL=\{idle:'Not connected'/);
+  assert.match(app,/function arenaDockSet\(/);
+  assert.match(app,/async function arenaDockPoll\(\)/,'the dock peeks at the relay tab rather than guessing');
+  assert.match(app,/arenaAuthPeek/);
+  assert.match(app,/renderArenaDock\(\);if\(\$\('settingsDialog'\)\?\.open\)/,'render() repaints the dock');
+  assert.match(app,/state\.arenaDock=\$\('arenaDockOn'\)\.checked/,'the Settings checkbox persists the dock');
+  assert.match(app,/dock\.hidden=state\.arenaDock!==true/,'Hide is a persisted setting, not a session-only fiddle');
+  assert.match(styles,/main\{grid-template-rows:auto auto auto minmax\(0,1fr\) auto auto\}/,'the dock has its own template row');
+  assert.match(styles,/#arenaDock\{grid-row:2\}/);
+  assert.match(styles,/#messages\{grid-row:4\}/,'the transcript keeps the 1fr row with the dock present');
+});

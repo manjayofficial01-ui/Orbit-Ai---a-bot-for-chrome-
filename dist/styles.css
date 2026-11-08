@@ -518,15 +518,17 @@ footer{position:relative}
    author `display` rule outranks the user-agent `[hidden]{display:none}`. Without this,
    a Stop button and a Read-aloud icon that were meant to be gone stay on screen. */
 [hidden]{display:none!important}
-main{grid-template-rows:auto auto minmax(0,1fr) auto auto}
-/* Rows are placed by name, not by document order: the waiting bar is hidden most of
-   the time, and a hidden grid item would otherwise shift every row below it up one —
-   which put the 1fr track on the status line and pushed the composer off screen. */
+main{grid-template-rows:auto auto auto minmax(0,1fr) auto auto}
+/* Rows are placed by name, not by document order: the Arena dock and the waiting bar
+   are hidden most of the time, and a hidden grid item would otherwise shift every row
+   below it up one — which put the 1fr track on the status line and pushed the composer
+   off screen. An explicitly placed row simply empties when its item is hidden. */
 header{grid-row:1}
-#needsYou{grid-row:2}
-#messages{grid-row:3}
-#status{grid-row:4}
-footer{grid-row:5}
+#arenaDock{grid-row:2}
+#needsYou{grid-row:3}
+#messages{grid-row:4}
+#status{grid-row:5}
+footer{grid-row:6}
 header{overflow:visible;z-index:5}
 #messages{padding:18px clamp(12px,3.2vw,40px) 26px}
 footer{display:flex;flex-direction:column;align-items:stretch;gap:0;padding:0 clamp(10px,3vw,28px) 10px;border-top:0;background:transparent;font-size:.78rem}
@@ -570,3 +572,16 @@ footer{display:flex;flex-direction:column;align-items:stretch;gap:0;padding:0 cl
 /* Arena connect row — the button plus its one-line promise. */
 #arenaConnectRow{align-items:center}
 #arenaConnectHint{flex:1;min-width:200px;color:var(--muted);font-weight:400;font-size:.76rem}
+
+/* Arena dock — a view of the relay inside Orbit (arena.ai itself forbids embedding). */
+#arenaDock{border-bottom:1px solid var(--divider);background:color-mix(in oklab,var(--bg) 92%,transparent)}
+.arena-dock-head{display:flex;align-items:center;gap:4px;max-width:900px;margin:0 auto;padding:0 clamp(18px,5vw,72px)}
+#arenaDockHead{flex:1;display:flex;align-items:center;gap:8px;min-height:40px;font-size:.78rem;color:var(--muted)}
+#arenaDockHead strong{color:var(--text);font-weight:700}
+.arena-dock-status{color:var(--primary);font-weight:650}
+.arena-dock-model{color:var(--faint);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.arena-dock-caret{transition:transform var(--ease)}
+#arenaDockHead[aria-expanded="true"] .arena-dock-caret{transform:rotate(180deg)}
+#arenaDockBody{max-width:900px;margin:0 auto;padding:0 clamp(18px,5vw,72px) 10px}
+#arenaDockBody .row{margin-bottom:0}
+#arenaDockPreview{max-height:180px;overflow:auto;padding:10px;background:var(--code);color:var(--code-text);border-radius:var(--radius-md);font:.78rem/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;margin-bottom:8px}

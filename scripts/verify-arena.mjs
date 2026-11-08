@@ -45,6 +45,10 @@ await send('Emulation.setDeviceMetricsOverride',{width:420,height:900,deviceScal
 await sleep(1500);
 record('extension boots',!!(await ev(ui,`return !!document.getElementById('prompt');`)));
 
+// The Arena dock: visible by default, no iframe anywhere, and it mirrors the relay.
+const dock=await ev(ui,`return {visible:!document.getElementById('arenaDock').hidden,status:document.getElementById('arenaDockStatus').textContent,bodyHidden:document.getElementById('arenaDockBody').hidden,iframe:!!document.querySelector('iframe'),messagesRow:getComputedStyle(document.getElementById('messages')).gridRowStart};`);
+record('the Arena dock renders (own grid row, never an embed)',dock?.visible===true&&typeof dock.status==='string'&&dock.iframe===false&&dock.messagesRow==='4',JSON.stringify(dock));
+
 // Open settings, switch to Arena, check the keyless UI.
 await ev(ui,`document.getElementById('settings').click();const p=document.getElementById('provider');p.value='arena';p.dispatchEvent(new Event('change',{bubbles:true}));await new Promise(r=>setTimeout(r,300));return true;`);
 const uiState=await ev(ui,`return {base:document.getElementById('base').value,baseRO:document.getElementById('base').readOnly,keyDisabled:document.getElementById('key').disabled,noteVisible:!document.getElementById('arenaNote').hidden,noteText:document.getElementById('arenaNote').textContent.slice(0,60),connectRow:!document.getElementById('arenaConnectRow').hidden,connectBtn:!!document.getElementById('arenaConnect')};`);
@@ -84,6 +88,8 @@ await clickTrusted(ui,'#arenaConnect');
 let connectStatus=null;
 for(let i=0;i<12;i++){await sleep(1000);connectStatus=await ev(ui,`return document.getElementById('settingsStatus').textContent;`);if(/Waiting for you to sign in|signed in|did not complete|timed out/i.test(connectStatus||''))break;}
 record('Connect Arena waits for the person instead of clicking',/Waiting for you to sign in/.test(connectStatus||''),String(connectStatus).slice(0,120));
+const dockStatus=await ev(ui,`return document.getElementById('arenaDockStatus').textContent;`);
+record('the dock mirrors the sign-in wait',/Waiting for you to sign in/.test(dockStatus||''),String(dockStatus));
 const forward=(await ev(ui,`const ts=await chrome.tabs.query({});return ts.filter(t=>String(t.url||'').startsWith('https://arena.ai')).map(t=>({active:t.active}));`));
 record('the relay tab was foregrounded for sign-in',Array.isArray(forward)&&forward.some(t=>t.active),JSON.stringify(forward));
 
