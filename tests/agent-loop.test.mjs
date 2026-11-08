@@ -443,3 +443,58 @@ test('autopilot still asks before a form-submitting Enter',async()=>{
   await h.run({autopilot:true});
   assert.equal(h.seen.confirms.length,1,'Enter is the one action autopilot never takes silently');
 });
+
+test('research_arena reaches the panel handler and the brief becomes an observation',async()=>{
+  const h=harness({tabs:[TAB_A],pageUrls:['https://a.test/one'],replies:[
+    fence({actions:[{tool:'research_arena',text:'What changed in extension policy?'}]}),
+    fence({actions:[{tool:'done',text:'ok'}]})
+  ]});
+  try{
+    const calls=[];
+    const res=await h.run({researchTools:{researchArena:async q=>{calls.push(q);return {ok:true,detail:'BRIEF: '+q};},askPersona:async()=>({ok:false,error:'unused'})}});
+    assert.equal(res.done,true);
+    assert.deepEqual(calls,['What changed in extension policy?'],'the handler receives the question verbatim');
+    const last=h.seen.bodies.at(-1).messages.at(-1).content;
+    assert.match(last,/BRIEF: What changed in extension policy\?/,'the brief reaches the model as an observation');
+    assert.ok(h.seen.events.some(e=>e.type==='action'&&/research_arena/.test(e.text)),'the call is announced like every other action');
+  } finally { h.restore(); }
+});
+
+test('ask_persona hands a question to a named persona; a refusal is an observation, not a crash',async()=>{
+  const h=harness({tabs:[TAB_A],pageUrls:['https://a.test/one'],replies:[
+    fence({actions:[{tool:'ask_persona',ref:'Atlas',text:'challenge this brief'}]}),
+    fence({actions:[{tool:'done',text:'ok'}]})
+  ]});
+  try{
+    const res=await h.run({researchTools:{askPersona:async(name,q)=>({ok:true,detail:name+' answers:\nNoted: '+q})}});
+    assert.equal(res.done,true);
+    const last=h.seen.bodies.at(-1).messages.at(-1).content;
+    assert.match(last,/Atlas answers:\nNoted: challenge this brief/);
+    const h2=harness({tabs:[TAB_A],pageUrls:['https://a.test/one'],replies:[
+      fence({actions:[{tool:'ask_persona',ref:'Nobody',text:'q'}]}),
+      fence({actions:[{tool:'done',text:'ok'}]})
+    ]});
+    try{
+      const res2=await h2.run({researchTools:{askPersona:async()=>({ok:false,error:'No persona named "Nobody" is in the roster.'})}});
+      assert.equal(res2.done,true,'the run continues after a refusal');
+      assert.match(h2.seen.bodies.at(-1).messages.at(-1).content,/No persona named "Nobody"/,'the refusal reaches the model so it can adapt');
+    } finally { h2.restore(); }
+  } finally { h.restore(); }
+});
+
+test('without panel handlers the research tools refuse cleanly instead of crashing the loop',async()=>{
+  // A failed action ends its step (the loop's standard contract), so each refusal runs
+  // alone and the model adapts to the observation instead of the run dying.
+  const h=harness({tabs:[TAB_A],pageUrls:['https://a.test/one'],replies:[
+    fence({actions:[{tool:'research_arena',text:'q'}]}),
+    fence({actions:[{tool:'ask_persona',ref:'Atlas',text:'q'}]}),
+    fence({actions:[{tool:'done',text:'ok'}]})
+  ]});
+  try{
+    const res=await h.run();
+    assert.equal(res.done,true);
+    const all=h.seen.bodies.map(b=>b.messages.at(-1).content).join('\n');
+    assert.match(all,/Arena research is not available in this run/);
+    assert.match(all,/Personas are not available in this run/);
+  } finally { h.restore(); }
+});

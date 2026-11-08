@@ -90,6 +90,17 @@ export const SKILLS = [
     instructions:
       'If the person asks you to remember something, call memory_save once with the fact as they gave it, trimmed to one clear sentence. Never save secrets, credentials or card numbers. Confirm what you saved in one short sentence, and say they can review it in Settings.',
   },
+  {
+    slug: 'research',
+    title: 'Research with Arena',
+    summary: 'Send a question to arena.ai; the roster reviews the brief; a synthesis follows.',
+    triggers: ['deep research'],
+    // The pipeline is a run started by this command or the Research mode, never a chat
+    // reply; this brief only shapes what the model says around an already-run pipeline.
+    tools: [],
+    instructions:
+      'The Arena research pipeline is a run, not a chat reply: the question went to arena.ai, every other persona reviewed the brief under a role (verify the claims, challenge the gaps, plan the implementation), and a synthesis follows the reviews. When those messages are already in this conversation, work from them and do not restate the brief. When they are not, say a full run starts from the Agent menu (Research with Arena) or the /research command, and answer briefly from what you know, marked as unverified.',
+  },
 ];
 
 /** Slugs, in catalogue order. */

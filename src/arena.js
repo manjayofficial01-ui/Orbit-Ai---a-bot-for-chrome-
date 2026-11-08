@@ -2,6 +2,7 @@
 import {arenaFlatten} from './core.js';
 
 const ORIGIN='https://arena.ai';
+const ORIGIN_HOST='arena.ai';
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 
 // Model display names in the picker are slugs, except the router shown as "Max".
@@ -16,11 +17,13 @@ async function exec(tabId,func,args=[],documentId){
 }
 
 // A single dedicated background tab, remembered across panel reloads. Orbit never hijacks
-// an arena.ai tab the user opened themselves.
+// an arena.ai tab the user opened themselves. The tab may legitimately sit on a Google
+// sign-in host mid-OAuth — that is still the relay tab, and abandoning it would strand
+// the person's sign-in.
 async function relayTabId(){
   let id=null;
   try{({arenaRelayTab:id}=await chrome.storage.session.get('arenaRelayTab'));}catch{}
-  if(id!=null){try{const t=await chrome.tabs.get(id);if(new URL(t.url).origin!==ORIGIN)id=null;}catch{id=null;}}
+  if(id!=null){try{const t=await chrome.tabs.get(id);const u=new URL(t.url);if(u.origin!==ORIGIN&&!/google\.[a-z.]+$/i.test(u.hostname))id=null;}catch{id=null;}}
   if(id==null){const t=await chrome.tabs.create({url:ORIGIN+'/direct',active:false});id=t.id;try{await chrome.storage.session.set({arenaRelayTab:id});}catch{}}
   return id;
 }
@@ -123,6 +126,16 @@ function driverReadModels(){
   document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',keyCode:27,which:27,bubbles:true}));
   return {names};
 }
+// Sign-in watcher. Read-only by design: it reports what the page shows and never
+// clicks — not the Continue with Google button, not Agree. The person completes
+// every auth screen themselves.
+function driverAuthState(){
+  if(location.origin!=='https://arena.ai')return {error:'off-origin',url:location.href};
+  const dlg=[...document.querySelectorAll('[role="dialog"],[role="alertdialog"]')].map(d=>d.textContent||'').join(' ');
+  if(/Terms of Use.*Privacy Policy|By clicking ["“]Agree/i.test(dlg))return {error:'terms-required'};
+  if(/free account is required|log in or create account/i.test(dlg)&&/continue with/i.test(dlg))return {wall:'login'};
+  return {composer:!!document.querySelector('textarea[placeholder]')};
+}
 
 async function openDirect(id,model,signal,deadline){
   checkStopped(signal,deadline);
@@ -147,7 +160,7 @@ async function openDirect(id,model,signal,deadline){
 }
 function sendError(code){
   if(code==='terms-required')return Error('Review Arena’s Terms of Use in the relay tab yourself. Orbit will not click Agree or accept legal terms for you. Automated access requires Arena’s permission.');
-  if(code==='login-wall')return Error('Sign in to arena.ai in the relay tab Orbit opened, then send again. Direct mode needs a free Arena account.');
+  if(code==='login-wall'){const e=Error('Arena wants a sign-in. Sign in with Google in the Arena tab Orbit opens, then try again — a run pauses as a sign-in card and resumes on its own.');e.arenaLogin=true;return e;}
   if(code==='wrong-origin')return Error('The Arena relay tab navigated to another site. No prompt was sent there.');
   if(code==='send-disabled')return Error('Arena’s send button stayed disabled. The model slug may be invalid — pick another in Settings.');
   return Error('Arena’s composer was not ready ('+code+'). Open arena.ai/direct to check the site.');
@@ -220,4 +233,45 @@ export async function arenaListModels(){
   if(!models.length)throw Error('Could not read Arena’s model picker. Type a model slug from arena.ai/direct (e.g. deepseek-v4.1-flash-high), then press Test connection.');
   return models;
   });
+}
+
+// ---------------------------------------------------------------------------
+// Sign-in. Orbit brings the relay tab forward and watches for the login wall to
+// clear; the person clicks "Continue with Google" and completes every Google
+// screen themselves. Nothing here clicks, types, or accepts anything for them.
+// ---------------------------------------------------------------------------
+
+/** Bring the relay tab to the foreground for sign-in. Never navigates mid-OAuth. */
+export async function arenaOpenForSignIn(){
+  const id=await relayTabId();
+  const t=await chrome.tabs.get(id);
+  const url=String(t.url||'');
+  let host='';try{host=new URL(url).hostname;}catch{}
+  const midOAuth=/google\./i.test(host)||host===ORIGIN_HOST;
+  if(host!==ORIGIN_HOST&&!midOAuth){await chrome.tabs.update(id,{url:ORIGIN+'/direct'});}
+  await chrome.tabs.update(id,{active:true});
+  return id;
+}
+
+/**
+ * Watch the relay tab until the login wall is gone. `off-origin` (Google owns the
+ * tab) keeps waiting; a Terms dialog is thrown back untouched; once the tab is on
+ * arena.ai with no wall, it lands on /direct and looks for the composer.
+ */
+export async function arenaWaitSignedIn({signal,timeoutMs=300000}={}){
+  const id=await relayTabId();
+  const deadline=Date.now()+timeoutMs;
+  let landed=false;
+  while(true){
+    if(signal?.aborted)throw Error('Stopped.');
+    if(Date.now()>=deadline)throw Error('Sign-in timed out. Finish it in the Arena tab, then try again.');
+    await sleep(2000);
+    let st=null;
+    try{st=await exec(id,driverAuthState);}catch{continue;} // a navigation can kill the document mid-poll
+    if(!st||st.error==='off-origin')continue;
+    if(st.error==='terms-required')throw sendError('terms-required');
+    if(st.wall==='login')continue;
+    if(st.composer)return {signedIn:true};
+    if(!landed){landed=true;await chrome.tabs.update(id,{url:ORIGIN+'/direct'}).catch(()=>{});}
+  }
 }

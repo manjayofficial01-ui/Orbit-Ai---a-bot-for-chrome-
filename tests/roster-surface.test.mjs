@@ -132,3 +132,22 @@ test('the persona and routine limits are enforced in code, not by asking nicely'
   assert.match(app,/state\.roster=normalizeRoster\(state\.roster\)/,'stored state is repaired at boot');
   assert.match(app,/state\.routines=normalizeRoutines\(state\.routines\)/);
 });
+
+test('the Arena research pipeline is wired: menu, slash command, provenance, sign-in hand-back',()=>{
+  assert.match(app,/label:'Research with Arena'/,'the Research mode sits in the Agent menu');
+  assert.match(app,/slash\?\.skill\?\.slug==='research'/,'the /research command starts the pipeline instead of a chat reply');
+  assert.match(app,/async function runResearch\(/);
+  assert.match(app,/selectResearchers\(state\.roster,lead\?\.id\)/,'the fan-out comes from the roster, never a hardcoded list');
+  assert.match(app,/provenance:'Arena · '/,'the Arena brief carries its model in the name line');
+  assert.match(app,/function messagePersona\(/,'research messages show their own author');
+  assert.match(app,/messagePersona\(m\)\?\.name\|\|'Orbit'/,'the name line honours a message provenance');
+  assert.match(app,/ensureArenaSignedIn\(\{signal:controller\.signal\}\)/,'a login wall mid-run hands back to the person and resumes');
+  assert.match(app,/arenaWaitSignedIn/,'the watcher polls the relay tab');
+  assert.match(app,/connectRow\.hidden=!arena/,'the Connect row appears only for the Arena preset');
+  assert.match(html,/id="arenaConnect"/,'Settings offers a Connect Arena button');
+  assert.match(html,/id="arenaConnectRow"/);
+  assert.match(styles,/\.orbit-card\.kind-signin/,'the sign-in card is styled');
+  assert.match(agentRun,/researchTools\?\.researchArena/,'the agent loop can call Arena research');
+  assert.match(agentRun,/researchTools\?\.askPersona/,'the agent loop can consult a persona');
+  assert.match(app,/researchTools:researchToolsFor\(\{signal:controller\.signal,onNote:say\}\)/,'the panel run passes its handlers');
+});

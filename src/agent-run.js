@@ -188,7 +188,7 @@ export async function askStepApproval(message) {
   return typeof answer === 'boolean' ? answer : /^approve/i.test(String(answer || ''));
 }
 
-export async function runAgentLoop({cfg,key,goal,onEvent,signal,approve,autoSafe=false,autopilot=false}){
+export async function runAgentLoop({cfg,key,goal,onEvent,signal,approve,autoSafe=false,autopilot=false,researchTools=null}){
   const {tab,tabs}=await resolveAgentTarget();
   pageOrigin(tab.url);
   const fresh=await chrome.tabs.get(tab.id);
@@ -403,6 +403,23 @@ export async function runAgentLoop({cfg,key,goal,onEvent,signal,approve,autoSafe
         r=saved.ok
           ?{tool:a.tool,ok:true,detail:saved.duplicate?'already in memory — nothing new saved':'saved to memory; the person can review it in Settings'}
           :{tool:a.tool,ok:false,error:saved.error};
+      }
+      else if(a.tool==='research_arena'){
+        // The handlers live in the panel (roster, profiles, sign-in card); agent-run only
+        // sees two async functions that resolve or refuse. A refusal is an observation the
+        // model can act on, never an abort of the run.
+        if(!researchTools?.researchArena)r={tool:a.tool,ok:false,error:'Arena research is not available in this run.'};
+        else{
+          const out=await researchTools.researchArena(a.text,{signal});
+          r=out?.ok?{tool:a.tool,ok:true,detail:out.detail}:{tool:a.tool,ok:false,error:out?.error||'The Arena research call failed.'};
+        }
+      }
+      else if(a.tool==='ask_persona'){
+        if(!researchTools?.askPersona)r={tool:a.tool,ok:false,error:'Personas are not available in this run.'};
+        else{
+          const out=await researchTools.askPersona(a.ref,a.text,{signal});
+          r=out?.ok?{tool:a.tool,ref:a.ref,ok:true,detail:out.detail}:{tool:a.tool,ref:a.ref,ok:false,error:out?.error||'The persona call failed.'};
+        }
       }
       else if(a.tool==='computer_read')r=await execAction(activeTabId,activeDocumentId,snapshot,a);
       else if(a.tool==='snapshot')r={tool:'snapshot',ok:true,detail:'re-read'};

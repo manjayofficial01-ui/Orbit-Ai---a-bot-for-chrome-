@@ -566,3 +566,7 @@ footer{display:flex;flex-direction:column;align-items:stretch;gap:0;padding:0 cl
 
 
 
+
+/* Arena connect row — the button plus its one-line promise. */
+#arenaConnectRow{align-items:center}
+#arenaConnectHint{flex:1;min-width:200px;color:var(--muted);font-weight:400;font-size:.76rem}

@@ -162,3 +162,27 @@ test('hands-free reading covers only read-only actions',()=>{
   for(const mutating of ['click','fill','type','select','press','focus','goto','nav-history','read-tab','computer_write_file','computer_request_secret','computer_request_help','memory_save','done'])
     assert.ok(!SAFE_READONLY_ACTIONS.has(mutating),mutating+' must always ask');
 });
+
+test('research_arena and ask_persona validate like the rest of the vocabulary',()=>{
+  assert.equal(validateAgentAction({tool:'research_arena',text:'What changed in extension policy?'}),null);
+  assert.match(validateAgentAction({tool:'research_arena'}),/needs a "text"/);
+  assert.match(validateAgentAction({tool:'research_arena',ref:'e1',text:'q'}),/takes no ref/);
+  assert.match(validateAgentAction({tool:'research_arena',text:'q'.repeat(2001)}),/2,000/);
+  assert.equal(validateAgentAction({tool:'ask_persona',ref:'Atlas',text:'review this brief'}),null);
+  assert.match(validateAgentAction({tool:'ask_persona',text:'q'}),/needs a "ref"/);
+  assert.match(validateAgentAction({tool:'ask_persona',ref:'Atlas'}),/needs a "text"/);
+  assert.match(validateAgentAction({tool:'ask_persona',ref:'A'.repeat(81),text:'q'}),/persona name/);
+  assert.match(validateAgentAction({tool:'ask_persona',ref:'Atlas',text:'q'.repeat(2001)}),/2,000/);
+  assert.equal(parseAgentActions('```orbit-actions\n{"actions":[{"tool":"research_arena","text":"q"}]}\n```').actions[0].tool,'research_arena');
+});
+
+test('the Arena research tools spend credits, so they always ask',()=>{
+  assert.ok(!SAFE_READONLY_ACTIONS.has('research_arena'),'research_arena spends an Arena message — it is never hands-free');
+  assert.ok(!SAFE_READONLY_ACTIONS.has('ask_persona'),'ask_persona spends the person\'s provider tokens — it always asks');
+  for(const mutating of ['click','fill','type','select','press','focus','goto','nav-history','read-tab','computer_write_file','computer_request_secret','computer_request_help','memory_save','done'])
+    assert.ok(!SAFE_READONLY_ACTIONS.has(mutating),mutating+' must always ask');
+  assert.match(describeActions([{tool:'research_arena',text:'What changed?'}]),/research_arena: What changed\?/);
+  assert.match(describeActions([{tool:'ask_persona',ref:'Atlas',text:'review'}]),/ask_persona Atlas/);
+  assert.match(buildAgentSystemPrompt(),/research_arena/,'the default prompt documents the research tool');
+  assert.match(buildAgentSystemPrompt(),/daily Arena credits/,'the prompt states what it costs');
+});

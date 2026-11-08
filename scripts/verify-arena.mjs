@@ -47,8 +47,8 @@ record('extension boots',!!(await ev(ui,`return !!document.getElementById('promp
 
 // Open settings, switch to Arena, check the keyless UI.
 await ev(ui,`document.getElementById('settings').click();const p=document.getElementById('provider');p.value='arena';p.dispatchEvent(new Event('change',{bubbles:true}));await new Promise(r=>setTimeout(r,300));return true;`);
-const uiState=await ev(ui,`return {base:document.getElementById('base').value,baseRO:document.getElementById('base').readOnly,keyDisabled:document.getElementById('key').disabled,noteVisible:!document.getElementById('arenaNote').hidden,noteText:document.getElementById('arenaNote').textContent.slice(0,60)};`);
-record('Arena UI is keyless (base fixed, key disabled, note shown)',uiState?.base==='https://arena.ai'&&uiState.baseRO&&uiState.keyDisabled&&uiState.noteVisible,JSON.stringify(uiState));
+const uiState=await ev(ui,`return {base:document.getElementById('base').value,baseRO:document.getElementById('base').readOnly,keyDisabled:document.getElementById('key').disabled,noteVisible:!document.getElementById('arenaNote').hidden,noteText:document.getElementById('arenaNote').textContent.slice(0,60),connectRow:!document.getElementById('arenaConnectRow').hidden,connectBtn:!!document.getElementById('arenaConnect')};`);
+record('Arena UI is keyless (base fixed, key disabled, note shown, Connect Arena present)',uiState?.base==='https://arena.ai'&&uiState.baseRO&&uiState.keyDisabled&&uiState.noteVisible&&uiState.connectRow&&uiState.connectBtn,JSON.stringify(uiState));
 const settings=await ev(ui,`const ids=['format','temperature','maxTokens','tokenField','effort','search','xsearch','code'];const arenaDisabled=ids.every(id=>document.getElementById(id).disabled);const p=document.getElementById('provider');p.value='google';p.dispatchEvent(new Event('change',{bubbles:true}));const apiRestored=ids.every(id=>!document.getElementById(id).disabled)&&!document.getElementById('key').disabled&&!document.getElementById('base').readOnly&&document.getElementById('arenaNote').hidden;p.value='arena';p.dispatchEvent(new Event('change',{bubbles:true}));return {arenaDisabled,apiRestored};`);
 record('unsupported Arena settings are disabled and API profiles restore them',settings?.arenaDisabled&&settings.apiRestored,JSON.stringify(settings));
 const shot1=(await send('Page.captureScreenshot',{format:'png'},ui)).result?.data;
@@ -65,8 +65,8 @@ if(models?.count>0){
   await ev(ui,`document.getElementById('model').value=${JSON.stringify(models.first[0])};return true;`);
   await clickTrusted(ui,'#testModel');
   let probe=null;
-  for(let i=0;i<40;i++){await sleep(1000);probe=await ev(ui,`return document.getElementById('settingsStatus').textContent;`);if(/Review Arena’s Terms|Sign in to arena\.ai|working through Arena|did not start|timed out|composer/i.test(probe||''))break;}
-  record('probe resolves with manual consent/sign-in guidance or success',/Review Arena’s Terms|Sign in to arena\.ai|working through Arena/.test(probe||''),String(probe).slice(0,160));
+  for(let i=0;i<40;i++){await sleep(1000);probe=await ev(ui,`return document.getElementById('settingsStatus').textContent;`);if(/Review Arena’s Terms|wants a sign-in|working through Arena|did not start|timed out|composer/i.test(probe||''))break;}
+  record('probe resolves with manual consent/sign-in guidance or success',/Review Arena’s Terms|wants a sign-in|working through Arena/.test(probe||''),String(probe).slice(0,160));
   const tabs=await ev(ui,`const ts=await chrome.tabs.query({});return ts.filter(t=>String(t.url||'').startsWith('https://arena.ai')).map(t=>({id:t.id,url:t.url,active:t.active}));`);
   record('a dedicated arena.ai relay tab was opened',Array.isArray(tabs)&&tabs.length>=1,JSON.stringify(tabs));
   if(/Review Arena’s Terms/.test(probe||'')){
@@ -76,6 +76,29 @@ if(models?.count>0){
   const shot2=(await send('Page.captureScreenshot',{format:'png'},ui)).result?.data;
   if(shot2)writeFileSync(join(OUT,'arena-probe.png'),Buffer.from(shot2,'base64'));
 }
+// The Connect flow: with the host pre-granted, pressing Connect Arena must foreground the
+// relay tab and wait for the person — it never clicks Google. Anonymous Chrome stays behind
+// the wall, so the honest outcome here is "Waiting for you to sign in" (it times out later,
+// after this script has moved on).
+await clickTrusted(ui,'#arenaConnect');
+let connectStatus=null;
+for(let i=0;i<12;i++){await sleep(1000);connectStatus=await ev(ui,`return document.getElementById('settingsStatus').textContent;`);if(/Waiting for you to sign in|signed in|did not complete|timed out/i.test(connectStatus||''))break;}
+record('Connect Arena waits for the person instead of clicking',/Waiting for you to sign in/.test(connectStatus||''),String(connectStatus).slice(0,120));
+const forward=(await ev(ui,`const ts=await chrome.tabs.query({});return ts.filter(t=>String(t.url||'').startsWith('https://arena.ai')).map(t=>({active:t.active}));`));
+record('the relay tab was foregrounded for sign-in',Array.isArray(forward)&&forward.some(t=>t.active),JSON.stringify(forward));
+
+// The research surface: the Agent menu item exists, and /research starts the pipeline —
+// which without a configured Arena model fails with the exact honest instruction.
+await ev(ui,`document.getElementById('settingsDialog').close();document.getElementById('prompt').value='/research test question';return true;`);
+await clickTrusted(ui,'#agentMode');
+const menu=await ev(ui,`const m=document.querySelector('.composer-menu');return m?{items:[...m.querySelectorAll('strong')].map(s=>s.textContent)}:null;`);
+record('the Agent menu offers Research with Arena',Array.isArray(menu?.items)&&menu.items.includes('Research with Arena'),JSON.stringify(menu?.items));
+await ev(ui,`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));document.querySelector('.composer-menu')?.remove();return true;`);
+await clickTrusted(ui,'#send');
+let researchStatus=null;
+for(let i=0;i<10;i++){await sleep(1000);researchStatus=await ev(ui,`return document.getElementById('status').textContent;`);if(/Choose an Arena model|research/i.test(researchStatus||''))break;}
+record('/research runs the pipeline and refuses honestly without a model',/Choose an Arena model first/.test(researchStatus||''),String(researchStatus).slice(0,140));
+
 record('no extension-page exceptions',errors.length===0,errors.slice(0,2).join(' | ').slice(0,200));
 console.log('\nEvidence in',OUT);
 const failed=results.filter(r=>!r.ok).length;

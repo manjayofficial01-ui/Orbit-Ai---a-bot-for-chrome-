@@ -108,7 +108,7 @@ test('welcome-screen claims stay anchored to capabilities that exist in code',()
 
 test('one-click screenshot analysis reuses the reviewed capture and cannot bypass it',()=>{
   assert.match(app,/\$\('analyzeShot'\)\.hidden=!shot;/,'Analyze now must appear only for screenshot references');
-  assert.match(app,/\$\('attach'\)\.classList\.toggle\('primary',!shot\);/);
+  assert.match(app,/\$\('attachRef'\)\.classList\.toggle\('primary',!shot\);/);
   assert.match(app,/\$\('analyzeShot'\)\.onclick=safe\(async\(\)=>\{if\(busy\)return;if\(!preview\|\|preview\.kind!=='screenshot'\)return;/,
     'Analyze now may only act on a preview opened through the review dialog');
   assert.match(app,/pending\.push\(ref\);renderAttachments\(\);if\(!\$\('prompt'\)\.value\.trim\(\)\)\$\('prompt'\)\.value='Analyze this screenshot\./,
@@ -120,6 +120,14 @@ test('one-click screenshot analysis reuses the reviewed capture and cannot bypas
   assert.ok(handler.length>0,'the analyze handler must exist');
   assert.doesNotMatch(handler,/captureActiveScreenshot/,'Analyze now must reuse the reviewed capture, not take a new one');
   assert.doesNotMatch(handler,/dataUrl\s*=/,'the handler must not fabricate image data');
+});
+
+test('every element id in the panel document is unique',()=>{
+  // $() is getElementById, which returns the first match: a duplicated id makes the
+  // later wiring assignment silently clobber the earlier one (the #attach incident).
+  const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(m=>m[1]);
+  const dupes=[...new Set(ids.filter((id,i)=>ids.indexOf(id)!==i))];
+  assert.deepEqual(dupes,[],`duplicate element ids in dist/index.html: ${dupes.join(', ')}`);
 });
 
 test('active-tab context is automatic, not keyword-gated',()=>{
@@ -168,7 +176,7 @@ test('all-sites access stays optional and requestable for captures only',()=>{
 test('creating the first chat never discards the message attachments',()=>{
   assert.match(app,/async function ensureChat\(\)\{let chat=current\(\);if\(chat\)return chat;const keep=structuredClone\(pending\);await newChat\(\);chat=current\(\);pending=keep;renderAttachments\(\);return chat;\}/,
     'ensureChat must snapshot pending before newChat and restore it after');
-  assert.equal([...app.matchAll(/await ensureChat\(\)/g)].length,4,'chat, agent, tasks and check-in must all use it');
+  assert.equal([...app.matchAll(/await ensureChat\(\)/g)].length,6,'chat, agent, tasks, check-in, research and the Arena sign-in must all use it');
   assert.doesNotMatch(app,/if\(!chat\)\{await newChat\(\);chat=current\(\);\}/,'no path may auto-create a chat while dropping pending references');
 });
 
