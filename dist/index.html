@@ -87,7 +87,8 @@
       </div>
       <div id="arenaDockBody" hidden>
         <pre id="arenaDockPreview" tabindex="0"></pre>
-        <div class="row"><button id="arenaDockConnect" type="button">Connect Arena…</button><button id="arenaDockPull" type="button">Pull into Orbit</button><button id="arenaDockOpen" type="button">Open Arena tab</button></div>
+        <div id="arenaEmbedHost" hidden></div>
+        <div class="row"><button id="arenaDockEmbed" type="button">Open Arena here</button><button id="arenaDockConnect" type="button">Connect Arena…</button><button id="arenaDockPull" type="button">Pull into Orbit</button><button id="arenaDockOpen" type="button">Open Arena tab</button></div>
       </div>
     </section>
 
@@ -168,7 +169,8 @@
     <div class="row"><button type="button" id="models">Fetch models</button><button type="button" id="testModel" class="primary">Test connection</button><button type="button" id="revoke">Forget key & revoke access</button></div>
           <p class="section-note">Fetching the list and testing a model are separate on purpose: a provider can refuse <code>/models</code> while your chosen model answers fine, and a listed model is not proof it generates. Testing sends one small live request to the model named above and may cost a fraction of a cent.</p>
     <div class="row" id="arenaConnectRow" hidden><button type="button" id="arenaConnect">Connect Arena…</button><small id="arenaConnectHint">Brings the Arena tab forward and watches for your Google sign-in to finish. One-time — the tab is remembered.</small></div>
-    <label class="check" id="arenaDockRow" hidden><input id="arenaDockOn" type="checkbox"> <span><strong>Show the Arena dock</strong><small>Live Arena status and the latest answer at the top of Orbit, in the panel and the workspace. arena.ai forbids being embedded, so the dock mirrors what Orbit's relay sees — the relay tab itself only comes forward when you must sign in.</small></span></label>
+    <label class="check" id="arenaDockRow" hidden><input id="arenaDockOn" type="checkbox"> <span><strong>Show the Arena dock</strong><small>Live Arena status and the latest answer at the top of Orbit, in the panel and the workspace. The relay tab itself only comes forward when you must sign in.</small></span></label>
+    <label class="check" id="arenaEmbedRow" hidden><input id="arenaEmbedOn" type="checkbox"> <span><strong>Embed Arena in Orbit</strong><small>Renders the real arena.ai inside the dock (workspace and float window), and Orbit drives it there — no separate tab during runs. The extension overrides arena.ai's framing headers locally for this: arena.ai forbids embedding, so this is a deliberate local exception, yours to revoke. Sign-in still happens once in a real tab; if you block third-party cookies, the embedded view may show signed-out — use Open Arena tab then.</small></span></label>
     <p class="section-note" id="arenaNote" hidden><strong>Arena tab relay — experimental, no API key</strong>. Arena’s Terms prohibit automated access without permission; a free account or low usage does not grant permission. Use an authorized API provider for reliable autonomous agents. If Arena permits your use, sign in and review any Terms yourself in Orbit’s dedicated tab, then Fetch models → choose a model → Test connection → Save connection. Orbit brings the relay tab forward during requests and returns replies once generation finishes. Prompts, instructions and attached page text are sent to Arena and use your daily credits. Text only — images, screenshots, hosted tools and API generation settings are unsupported. Orbit never accepts legal terms or solves sign-in challenges for you.</p>
   </section>
   <section data-settings-panel="context" hidden>

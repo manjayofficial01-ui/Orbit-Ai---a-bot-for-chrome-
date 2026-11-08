@@ -32,6 +32,18 @@ test('JSON fallback',async()=>assert.equal((await mockGenerate(new Response(JSON
 test('premature stream close is failure',async()=>assert.rejects(()=>mockGenerate(new Response(stream('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'),{headers:{'content-type':'text/event-stream'}})),/before completion/));
 test('provider error body is not leaked',async()=>{await assert.rejects(()=>mockGenerate(new Response('SECRET-KEY',{status:401})),e=>e.message.includes('401')&&!e.message.includes('SECRET'));});
 test('incomplete Responses JSON is failure',async()=>assert.rejects(()=>mockGenerate(new Response(JSON.stringify({status:'incomplete',output_text:'partial'}))),/incomplete/));
+test('the framing-header override is surgical: arena.ai sub-frames only, nothing else',()=>{
+  const m=JSON.parse(fs.readFileSync(new URL('../dist/manifest.json',import.meta.url)));
+  assert.ok(m.permissions.includes('declarativeNetRequest'),'the embed needs the local header override');
+  assert.ok(m.permissions.includes('webNavigation'),'finding the embedded frame needs getAllFrames');
+  assert.deepEqual(m.declarative_net_request.rule_resources.map(r=>r.path),['arena-unframe.json'],'one ruleset, no more');
+  const rules=JSON.parse(fs.readFileSync(new URL('../dist/arena-unframe.json',import.meta.url)));
+  assert.equal(rules.length,1,'exactly one rule');
+  const rule=rules[0];
+  assert.deepEqual(rule.action.responseHeaders.map(h=>h.header+':'+h.operation),['X-Frame-Options:remove','Content-Security-Policy:remove'],'exactly the two framing headers — nothing else is touched');
+  assert.deepEqual(rule.condition.resourceTypes,['sub_frame'],'never main_frame: the relay tab keeps its own security headers');
+  assert.equal(rule.condition.urlFilter,'||arena.ai/','the override is scoped to arena.ai only');
+});
 test('manifest least privilege and packaged code',()=>{const m=JSON.parse(fs.readFileSync(new URL('../dist/manifest.json',import.meta.url)));assert.equal(m.manifest_version,3);assert.equal(m.minimum_chrome_version,'116');assert.equal(m.host_permissions,undefined);assert.equal(m.content_scripts,undefined);assert.ok(!m.permissions.includes('unlimitedStorage'));const csp=m.content_security_policy.extension_pages;assert.ok(csp.includes("script-src 'self'"));assert.ok(!/\[/.test(csp),'CSP source lists must not contain bracketed (IPv6 literal) sources Chrome will ignore');});
 test('data URL images use transport budget rather than text budget',()=>{const image='data:image/jpeg;base64,'+'a'.repeat(100000);const mm=[{role:'user',content:[{type:'text',text:'describe'},{type:'image_url',image_url:{url:image}}]}];assert.doesNotThrow(()=>requestBody(cfg,mm));});
 test('oversized screenshot transport is rejected',()=>{const image='data:image/jpeg;base64,'+'a'.repeat(5000001);const mm=[{role:'user',content:[{type:'text',text:'describe'},{type:'image_url',image_url:{url:image}}]}];assert.throws(()=>requestBody(cfg,mm),/5 MB/);});

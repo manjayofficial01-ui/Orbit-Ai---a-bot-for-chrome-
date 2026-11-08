@@ -210,3 +210,11 @@ Covered by `npm test` (310 extension) for the wiring; in real Chrome with your A
 104. **No echo**: after the brief lands, check it is the ANSWER, not a repetition of the question. If Orbit ever returns your own prompt, the transcript's error/failure chip should contain a census like `[list=ol roots=N msgs=N rev=1]` — report it.
 105. **The proactive pull**: type a question directly in the relay tab yourself and wait for the answer to finish. Within about ten seconds the dock flips to **"New answer ready — pull it in"** with the body expanded. Press **Pull into Orbit**: the answer appears in the transcript as `Arena · pulled`, followed by the card "Fan this answer out to the roster?". **Fan out** runs verify/challenge/plan + synthesis with no Arena credit; **Keep it** leaves the message alone. Pressing Pull again with nothing new says so honestly.
 106. **The dock never lies about what it has**: after any Orbit-side Arena run completes, the dock must NOT offer "New answer ready" for the answer Orbit just ingested; after you send a second, different answer in the Arena tab, it must offer it again.
+
+## Cycle 20 — the embedded Arena (2026-11-09)
+
+Covered by `npm test` (314 extension) for the wiring; in real Chrome with your Arena sign-in:
+
+107. Open the workspace (↗ full tab). Dock → expand → **Open Arena here**: the real arena.ai renders inside the dock body with your model preselected in the URL. Type into it and send — it is the real site on your account (one daily credit per message). **Close the embedded view** removes the frame; reopening remounts it fresh.
+108. With the embedded view open, run `/research <question>`: the run drives the frame — no relay tab is created or focused, and the brief streams back as before. Check the dock flips Generating… → Answer ready. Stop mid-run stops the frame's generation.
+109. **Settings → Arena → Embed Arena in Orbit** off: the Open-Arena-here button disappears, an open frame unmounts, and every Arena call returns to the relay tab (which still works). Back on: the button returns. Sign-in via Connect Arena still hands you to a real tab (Google blocks OAuth in frames) — after signing in, the embedded view picks up the session on its next open/close cycle. If you browse with third-party cookies blocked and the embedded view shows signed-out, use Open Arena tab instead and say so in feedback.

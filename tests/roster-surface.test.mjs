@@ -181,3 +181,15 @@ test('the two-sided flow: the dock pulls, the run can skip Arena, ingestion is r
   assert.equal((app.match(/arenaLastAnswerFp=arenaAnswerFingerprint\(/g)||[]).length>=4,true,'every ingestion point records its fingerprint');
   assert.match(app,/const st=await arenaDockPeek\(\)/,'the poll peeks the relay tab read-only');
 });
+
+test('the embedded Arena mounts in the dock, gated, wired and labelled',()=>{
+  assert.match(html,/id="arenaEmbedHost"/);
+  assert.match(html,/id="arenaDockEmbed"/);
+  assert.match(html,/id="arenaEmbedOn"/);
+  assert.match(app,/function mountArenaEmbed\(\)/);
+  assert.match(app,/frame\.title='Arena, embedded in Orbit'/,'the frame carries an accessible name');
+  assert.match(app,/if\(open\)mountArenaEmbed\(\);else unmountArenaEmbed\(\);/);
+  assert.match(app,/ui\.arenaEmbedOpen=ui\.arenaEmbedOpen!==true/);
+  assert.match(app,/state\.arenaEmbed=\$\('arenaEmbedOn'\)\.checked/);
+  assert.match(app,/reloadArenaEmbed\(\)/,'a tab-based sign-in refreshes the embedded frame');
+});

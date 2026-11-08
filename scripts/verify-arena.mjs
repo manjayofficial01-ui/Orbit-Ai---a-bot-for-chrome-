@@ -70,7 +70,7 @@ if(models?.count>0){
   await ev(ui,`document.getElementById('model').value=${JSON.stringify(models.first[0])};return true;`);
   await clickTrusted(ui,'#testModel');
   let probe=null;
-  for(let i=0;i<40;i++){await sleep(1000);probe=await ev(ui,`return document.getElementById('settingsStatus').textContent;`);if(/Review Arena’s Terms|wants a sign-in|working through Arena|did not start|timed out|composer/i.test(probe||''))break;}
+  for(let i=0;i<75;i++){await sleep(1000);probe=await ev(ui,`return document.getElementById('settingsStatus').textContent;`);if(/Review Arena’s Terms|wants a sign-in|working through Arena|did not start|timed out|composer/i.test(probe||''))break;}
   record('probe resolves with manual consent/sign-in guidance or success',/Review Arena’s Terms|wants a sign-in|working through Arena/.test(probe||''),String(probe).slice(0,160));
   const tabs=await ev(ui,`const ts=await chrome.tabs.query({});return ts.filter(t=>String(t.url||'').startsWith('https://arena.ai')).map(t=>({id:t.id,url:t.url,active:t.active}));`);
   record('a dedicated arena.ai relay tab was opened',Array.isArray(tabs)&&tabs.length>=1,JSON.stringify(tabs));
@@ -91,6 +91,16 @@ for(let i=0;i<12;i++){await sleep(1000);connectStatus=await ev(ui,`return docume
 record('Connect Arena waits for the person instead of clicking',/Waiting for you to sign in/.test(connectStatus||''),String(connectStatus).slice(0,120));
 const dockStatus=await ev(ui,`return document.getElementById('arenaDockStatus').textContent;`);
 record('the dock mirrors the sign-in wait',/Waiting for you to sign in/.test(dockStatus||''),String(dockStatus));
+
+// The embedded Arena: the framing-header override must be active, and the frame the
+// dock mounts must render and be drivable from the workspace tab.
+const rulesets=await ev(ui,`return JSON.stringify(await chrome.declarativeNetRequest.getEnabledRulesets());`);
+record('the framing-header override ruleset is enabled',(rulesets||'').includes('arena-unframe'),String(rulesets));
+await ev(ui,`if(document.getElementById('arenaDockBody').hidden)document.getElementById('arenaDockHead').click();return true;`);
+await clickTrusted(ui,'#arenaDockEmbed');
+await sleep(8000);
+const frameProbe=await ev(ui,`try{const [tab]=await chrome.tabs.query({active:true,currentWindow:true});const frames=await chrome.webNavigation.getAllFrames({tabId:tab.id});const f=frames.find(x=>(x.url||'').startsWith('https://arena.ai'));if(!f)return {frame:false,frames:frames.map(x=>x.url.slice(0,40))};const res=await chrome.scripting.executeScript({target:{tabId:tab.id,frameIds:[f.frameId]},func:()=>({origin:location.origin,composer:!!document.querySelector('textarea')})});return {frame:true,...res[0].result};}catch(e){return {error:String(e&&e.message||e).slice(0,120)}}`);
+record('the embedded Arena frame renders and is drivable',frameProbe?.frame===true&&frameProbe?.origin==='https://arena.ai'&&frameProbe?.composer===true,JSON.stringify(frameProbe));
 const forward=(await ev(ui,`const ts=await chrome.tabs.query({});return ts.filter(t=>String(t.url||'').startsWith('https://arena.ai')).map(t=>({active:t.active}));`));
 record('the relay tab was foregrounded for sign-in',Array.isArray(forward)&&forward.some(t=>t.active),JSON.stringify(forward));
 

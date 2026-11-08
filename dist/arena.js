@@ -24,8 +24,43 @@ async function relayTabId(){
   let id=null;
   try{({arenaRelayTab:id}=await chrome.storage.session.get('arenaRelayTab'));}catch{}
   if(id!=null){try{const t=await chrome.tabs.get(id);const u=new URL(t.url);if(u.origin!==ORIGIN&&!/google\.[a-z.]+$/i.test(u.hostname))id=null;}catch{id=null;}}
-  if(id==null){const t=await chrome.tabs.create({url:ORIGIN+'/direct',active:false});id=t.id;try{await chrome.storage.session.set({arenaRelayTab:id});}catch{}}
+  if(id==null){const t=await chrome.tabs.create({url:ORIGIN+'/text/direct',active:false});id=t.id;try{await chrome.storage.session.set({arenaRelayTab:id});}catch{}}
   return id;
+}
+// ---------------------------------------------------------------------------
+// Frame mode — the embedded Arena. When the person opened the workspace (or the
+// float window) and mounted the embedded view, the relay drives that frame inside
+// Orbit's own tab instead of a separate one: no tab switching, no focus dance.
+// The dedicated relay tab stays the sign-in surface and the fallback.
+// ---------------------------------------------------------------------------
+async function embedTarget(){
+  let url='';
+  try{url=chrome.runtime.getURL('index.html');}catch{return null;}
+  if(!url)return null;
+  let tabs=[];
+  try{tabs=await chrome.tabs.query({url});}catch{return null;}
+  for(const t of tabs){
+    let frames=[];
+    try{frames=await chrome.webNavigation.getAllFrames({tabId:t.id});}catch{continue;}
+    const frame=frames.find(f=>String(f.url||'').startsWith(ORIGIN));
+    if(frame)return {kind:'frame',tabId:t.id,frameId:frame.frameId};
+  }
+  return null;
+}
+export async function relayTarget(){
+  const embed=await embedTarget();
+  if(embed)return embed;
+  return {kind:'tab',id:await relayTabId()};
+}
+async function execFrame(target,func,args=[]){
+  const [res]=await chrome.scripting.executeScript({target:{tabId:target.tabId,frameIds:[target.frameId]},func,args,world:'MAIN'});
+  if(!res?.result)throw Error('Arena’s embedded view is not reachable. Reload Orbit (or reopen the workspace) and try again.');
+  if(res.result.error==='wrong-origin')throw sendError('wrong-origin');
+  return {...res.result,documentId:res.documentId,frameId:res.frameId};
+}
+function execIn(target,func,args=[],documentId){
+  if(target.kind==='frame')return execFrame(target,func,args);
+  return exec(target.id,func,args,documentId);
 }
 function checkStopped(signal,deadline){
   if(signal?.aborted)throw Error('Stopped.');
@@ -180,15 +215,22 @@ function driverAuthState(){
   return {composer:!!document.querySelector('textarea[name="message"], form textarea, textarea[placeholder]')};
 }
 
-async function openDirect(id,model,signal,deadline){
+async function openDirect(target,model,signal,deadline){
   checkStopped(signal,deadline);
   // Orbit replays the whole transcript, so every request needs a fresh Arena conversation.
-  await chrome.tabs.update(id,{url:ORIGIN+'/text/direct?model_a='+encodeURIComponent(model)});
-  await waitComplete(id,signal,deadline);
+  const url=ORIGIN+'/text/direct?model_a='+encodeURIComponent(model);
+  if(target.kind==='frame'){
+    // The frame navigates itself; a frame navigation never flips the tab's status,
+    // so the composer poll below is the readiness signal.
+    await execFrame(target,u=>{location.href=u;},[url]).catch(()=>{});
+  }else{
+    await chrome.tabs.update(target.id,{url});
+    await waitComplete(target.id,signal,deadline);
+  }
   let ready=null;
   for(let i=0;i<40;i++){
     checkStopped(signal,deadline);
-    ready=await exec(id,driverReady);
+    ready=await execIn(target,driverReady);
     if(ready.error)throw sendError(ready.error);
     if(ready.composer)break;
     await sleep(500);
@@ -196,7 +238,7 @@ async function openDirect(id,model,signal,deadline){
   if(!ready?.composer)throw Error('Arena’s composer was not found. The site may have changed — open arena.ai/direct to check.');
   await sleep(2000);
   checkStopped(signal,deadline);
-  ready=await exec(id,driverReady,[],ready.documentId);
+  ready=await execIn(target,driverReady,[],ready.documentId);
   if(ready.error)throw sendError(ready.error);
   if(ready.loginWall)throw sendError('login-wall');
   return ready.documentId;
@@ -214,27 +256,27 @@ export async function arenaGenerate(config,key,messages,{signal,onText,onUsage,t
   checkStopped(signal,deadline);
   if(!config.model?.trim())throw Error('Choose an Arena model in Settings.');
   const prompt=arenaFlatten(messages);
-  const id=await relayTabId();
+  const target=await relayTarget();
   checkStopped(signal,deadline);
-  return withFocus(id,async()=>{
-    const documentId=await openDirect(id,config.model,signal,deadline);
-    const prepared=await exec(id,driverSend,[prompt],documentId);
+  const runOn=async()=>{
+    const documentId=await openDirect(target,config.model,signal,deadline);
+    const prepared=await execIn(target,driverSend,[prompt],documentId);
     if(prepared.error)throw sendError(prepared.error);
     checkStopped(signal,deadline);
     // Baseline and submit may pin the pre-send document; the reads after submit never
     // do — Arena navigates the conversation to /c/<id>, and the drivers' origin guards
     // make following the live document safe.
-    const baseline=await exec(id,driverRead,[],documentId);
+    const baseline=await execIn(target,driverRead,[],documentId);
     if(baseline.error)throw sendError(baseline.error);
     if(baseline.generating)throw Error('Arena is already generating. Wait for it to finish.');
     checkStopped(signal,deadline);
-    const submitted=await exec(id,driverSubmit,[prompt],documentId);
+    const submitted=await execIn(target,driverSubmit,[prompt],documentId);
     if(submitted.error)throw sendError(submitted.error);
     let last='',stable=0,sawNew=false,census='';const start=Date.now();
     try{
       while(true){
         checkStopped(signal,deadline);
-        const r=await exec(id,driverRead);
+        const r=await execIn(target,driverRead);
         if(r.error==='login-wall'||r.error==='terms-required')throw sendError(r.error);
         if(r.error)throw Error('Arena: '+r.error);
         census=r.census||census;
@@ -246,7 +288,7 @@ export async function arenaGenerate(config,key,messages,{signal,onText,onUsage,t
         if(fresh&&!r.generating&&r.idle&&stable>=4){
           // One confirmation read: a streaming pause must not be mistaken for the end.
           await sleep(900);
-          const again=String((await exec(id,driverRead).catch(()=>null))?.text||'').trim();
+          const again=String((await execIn(target,driverRead).catch(()=>null))?.text||'').trim();
           if(again===last){
             // Rendered Markdown can rewrite earlier text; emit only the settled answer.
             onText?.(last);onUsage?.({transport:'arena'});return;
@@ -258,10 +300,15 @@ export async function arenaGenerate(config,key,messages,{signal,onText,onUsage,t
       }
     }catch(error){
       if(/timed out/.test(String(error.message||''))&&census)error.message+=' ['+census+']';
-      if(signal?.aborted||Date.now()>=deadline)await exec(id,driverStop).catch(()=>{});
+      if(signal?.aborted||Date.now()>=deadline)await execIn(target,driverStop).catch(()=>{});
       throw error;
     }
-  });
+  };
+  // Tab mode must foreground the relay tab while it works (Chrome renders a never-
+  // foregrounded tab at 0×0); the embedded frame lives where the person is already
+  // looking, so nothing is ever brought forward.
+  if(target.kind==='tab')return withFocus(target.id,runOn);
+  return runOn();
 }
 export async function arenaGenerateOnce(config,key,messages,{signal,timeoutMs=120000}={}){
   let text='';
@@ -269,26 +316,36 @@ export async function arenaGenerateOnce(config,key,messages,{signal,timeoutMs=12
   return {text,sources:[],usage:null,raw:null};
 }
 export async function arenaListModels(){
-  const id=await relayTabId();
-  return withFocus(id,async()=>{
-  const t=await chrome.tabs.get(id);
-  if(!/\/direct/.test(t.url||'')){await chrome.tabs.update(id,{url:ORIGIN+'/text/direct'});await waitComplete(id,undefined,Date.now()+30000);}
+  const target=await relayTarget();
+  const runOn=async()=>{
+  if(target.kind==='tab'){
+    const t=await chrome.tabs.get(target.id);
+    if(!/\/direct/.test(t.url||'')){await chrome.tabs.update(target.id,{url:ORIGIN+'/text/direct'});await waitComplete(target.id,undefined,Date.now()+30000);}
+  }else{
+    // The embedded frame must be visible for the picker's pointer events to land:
+    // a 0×0 layout has no hit targets. If the pane is closed, the composer poll fails
+    // with an honest error instead of pretending.
+    await execFrame(target,u=>{location.href=u;},[ORIGIN+'/text/direct']).catch(()=>{});
+    await sleep(1500);
+  }
   let ready;
-  for(let i=0;i<30;i++){ready=await exec(id,driverReady);if(ready.error)throw sendError(ready.error);if(ready.composer)break;await sleep(500);}
+  for(let i=0;i<30;i++){ready=await execIn(target,driverReady);if(ready.error)throw sendError(ready.error);if(ready.composer)break;await sleep(500);}
   if(!ready?.composer)throw sendError('no-composer');
   await sleep(2500); // let React hydrate before the picker's pointer handlers exist
   let names=[];
   for(let i=0;i<8;i++){
-    const opened=await exec(id,driverOpenPicker,[],ready.documentId);
+    const opened=await execIn(target,driverOpenPicker,[],ready.documentId);
     if(opened.error)throw sendError(opened.error);
     await sleep(1300);
-    const r=await exec(id,driverReadModels,[],ready.documentId);
+    const r=await execIn(target,driverReadModels,[],ready.documentId);
     if(r?.names?.length){names=r.names;break;}
   }
   const models=[...new Set(names.map(arenaSlug).filter(x=>/^[a-z0-9][a-z0-9.\-]*$/.test(x)))].sort();
-  if(!models.length)throw Error('Could not read Arena’s model picker. Type a model slug from arena.ai/direct (e.g. deepseek-v4.1-flash-high), then press Test connection.');
+  if(!models.length)throw Error('Could not read Arena’s model picker. Open the embedded Arena (or the relay tab), then type a model slug from arena.ai/direct (e.g. deepseek-v4.1-flash-high) and press Test connection.');
   return models;
-  });
+  };
+  if(target.kind==='tab')return withFocus(target.id,runOn);
+  return runOn();
 }
 
 // ---------------------------------------------------------------------------
@@ -332,8 +389,10 @@ export async function arenaWaitSignedIn({signal,timeoutMs=300000}={}){
   }
 }
 
-/** Read the relay tab's auth state without creating or focusing anything. Throws when there is no usable relay tab — the dock treats that as "not connected". */
+/** Read Arena's auth state without creating or focusing anything — the embedded frame first, the relay tab second. Throws when neither is usable; the dock treats that as "not connected". */
 export async function arenaAuthPeek(){
+  const embed=await embedTarget();
+  if(embed)return await execFrame(embed,driverAuthState);
   let id=null;
   try{({arenaRelayTab:id}=await chrome.storage.session.get('arenaRelayTab'));}catch{}
   if(id==null)throw Error('no relay tab yet');
@@ -342,8 +401,15 @@ export async function arenaAuthPeek(){
   return await exec(id,driverAuthState);
 }
 
-/** The dock's read-only look at the relay tab: auth state plus the latest assistant answer and the latest prompt, so Orbit can notice answers it never sent — including ones the person typed themselves. Throws when there is no usable relay tab. */
+/** The dock's read-only look at Arena: auth state plus the latest assistant answer and the latest prompt, so Orbit can notice answers it never sent — including ones the person typed themselves, here or in the relay tab. Throws when neither surface is usable. */
 export async function arenaDockPeek(){
+  const embed=await embedTarget();
+  if(embed){
+    const st=await execFrame(embed,driverAuthState);
+    if(st?.error||st?.wall)return st;
+    const r=await execFrame(embed,driverRead).catch(()=>null);
+    return {...st,answer:String(r?.text||''),userText:String(r?.userText||''),census:r?.census||''};
+  }
   let id=null;
   try{({arenaRelayTab:id}=await chrome.storage.session.get('arenaRelayTab'));}catch{}
   if(id==null)throw Error('no relay tab yet');

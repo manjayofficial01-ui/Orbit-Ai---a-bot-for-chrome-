@@ -38,7 +38,7 @@ function relayHarness({reads=[],onDriver=()=>{},initialUrl='https://arena.ai/dir
     }}
   };
   const source=arena.replace(/^import .*;\r?\n/gm,'').replace(/^export /gm,'');
-  const relay=runInNewContext(source+'\n({arenaGenerate,arenaGenerateOnce})',{
+  const relay=runInNewContext(source+'\n({arenaGenerate,arenaGenerateOnce,relayTarget})',{
     chrome,arenaFlatten,AbortSignal,URL,Date:{now:()=>clock},
     setTimeout:fn=>{clock+=1000;fn();}
   });
@@ -364,4 +364,32 @@ test('a timeout error carries the DOM census for diagnosis',async()=>{
   const reads=[{text:'a'.repeat(50),count:1,idle:true,generating:false,census:'list=ol roots=2 msgs=2'},{text:'b'.repeat(50),count:2,idle:true,generating:false,census:'list=ol roots=3 msgs=3'}];
   const h=relayHarness({reads,onDriver:name=>{if(name==='driverRead')reads.reverse();}});
   await assert.rejects(h.relay.arenaGenerateOnce({model:'max'},'',[{role:'user',content:'q'}]),/timed out.*\[list=ol/);
+});
+test('relayTarget prefers the embedded arena frame in a workspace tab',async()=>{
+  const chrome={
+    runtime:{getURL:()=>'chrome-extension://orbit/index.html'},
+    storage:{session:{get:async()=>({arenaRelayTab:7}),set:async()=>{}}},
+    tabs:{get:async()=>({id:7,url:'https://arena.ai/text/direct',status:'complete'}),query:async q=>q&&q.url?[{id:5,url:'chrome-extension://orbit/index.html'}]:[{id:8}],update:async()=>({}),create:async()=>({id:7})},
+    webNavigation:{getAllFrames:async({tabId})=>tabId===5?[{frameId:0,url:'chrome-extension://orbit/index.html'},{frameId:2,url:'https://arena.ai/text/direct?model_a=max'}]:[]},
+    scripting:{executeScript:async()=>[{result:{composer:true}}]}
+  };
+  const source=arena.replace(/^import .*;\r?\n/gm,'').replace(/^export /gm,'');
+  const relay=runInNewContext(source+'\n({relayTarget})',{chrome,URL,Date,setTimeout:fn=>{fn();}});
+  const target=await relay.relayTarget();
+  assert.deepEqual({kind:target.kind,tabId:target.tabId,frameId:target.frameId},{kind:'frame',tabId:5,frameId:2});
+});
+// (source extraction below mirrors the harness: strip imports and export keywords)
+
+test('relayTarget falls back to the dedicated relay tab without a workspace',async()=>{
+  const chrome={
+    runtime:{getURL:()=>'chrome-extension://orbit/index.html'},
+    storage:{session:{get:async()=>({arenaRelayTab:7}),set:async()=>{}}},
+    tabs:{get:async()=>({id:7,url:'https://arena.ai/text/direct',status:'complete'}),query:async q=>q&&q.url?[]:[{id:8}],update:async()=>({}),create:async()=>({id:7})},
+    webNavigation:{getAllFrames:async()=>[]},
+    scripting:{executeScript:async()=>[{result:{composer:true}}]}
+  };
+  const source=arena.replace(/^import .*;\r?\n/gm,'').replace(/^export /gm,'');
+  const relay=runInNewContext(source+'\n({relayTarget})',{chrome,URL,Date,setTimeout:fn=>{fn();}});
+  const target=await relay.relayTarget();
+  assert.deepEqual({kind:target.kind,id:target.id},{kind:'tab',id:7});
 });

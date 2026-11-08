@@ -32,3 +32,6 @@ OpenDuet-main/
 
 # ZCode local session/workflow state
 .zcode/
+
+# local experiments
+scratch/

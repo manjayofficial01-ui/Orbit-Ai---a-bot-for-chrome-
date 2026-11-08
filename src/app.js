@@ -19,12 +19,12 @@ const presets={openai:'https://api.openai.com/v1',xai:'https://api.x.ai/v1',goog
 const presetOverrides={google:{tokenField:'max_tokens'}};
 const defaults={base:presets.openai,model:'',format:'chat',transport:'',temperature:'',maxTokens:'',tokenField:'max_completion_tokens',effort:'',search:false,xsearch:false,code:false,instructions:'',memory:'',saveHistory:true,smartContext:true,contextDepth:'balanced',autoTitle:true,autoSafeActions:false,autoPilot:false};
 const fields=['base','model','format','temperature','maxTokens','tokenField','effort','search','xsearch','code','instructions','memory','saveHistory','smartContext','contextDepth','autoTitle','autoSafeActions','autoPilot'];
-let state={chats:[],current:'',provider:'openai',profiles:{},theme:'system',skin:'midnight',fontSize:'medium',recentChats:[],recentIndex:-1,tasks:[],checkin:{lastRunAt:0,hidden:[],suggestions:[]},roster:normalizeRoster(),routines:[],autoSpeak:false,voiceURI:'',arenaDock:true},keys={},modelCache={},busy=false,controller,ownsWorkspace=false,releaseLock,pending=[],preview,selectionId,saveQueue=Promise.resolve(),storageWritable=true;
+let state={chats:[],current:'',provider:'openai',profiles:{},theme:'system',skin:'midnight',fontSize:'medium',recentChats:[],recentIndex:-1,tasks:[],checkin:{lastRunAt:0,hidden:[],suggestions:[]},roster:normalizeRoster(),routines:[],autoSpeak:false,voiceURI:'',arenaDock:true,arenaEmbed:true},keys={},modelCache={},busy=false,controller,ownsWorkspace=false,releaseLock,pending=[],preview,selectionId,saveQueue=Promise.resolve(),storageWritable=true;
 let memoriesCache=[];
 // Cards that are waiting for an answer, by requestId. The promise is what the operator loop
 // is blocked on; the map is what lets a repaint, a chat switch or a Stop find it again.
 let cardResolvers=new Map();
-let ui={navHidden:false,sidebarWidth:272,rosterFilter:null,skin:null,arenaDockCollapsed:false};
+let ui={navHidden:false,sidebarWidth:272,rosterFilter:null,skin:null,arenaDockCollapsed:false,arenaEmbedOpen:false};
 const SKINS={midnight:{dark:true,label:'Midnight'},daylight:{dark:false,label:'Daylight'},atelier:{dark:false,label:'Atelier'},foundry:{dark:true,label:'Foundry'}};
 const SKIN_ORDER=['midnight','daylight','atelier','foundry'];
 // The effective configuration: the workspace profile, plus the persona's model override when
@@ -174,6 +174,7 @@ async function ensureArenaSignedIn({signal,card=true,say=status}={}){
     if(won==='cancel'){say('Sign-in dismissed. Send again when you are signed in.');arenaDockSet('idle');return {ok:false,error:'cancelled'};}
     say('Arena is signed in.');
     arenaDockSet('signed-in');
+    reloadArenaEmbed();
     return {ok:true};
   }catch(e){return {ok:false,error:String(e?.message||e)};}
   finally{arenaSigninRunning=false;}
@@ -211,6 +212,47 @@ function renderArenaDock(){
   body.hidden=ui.arenaDockCollapsed===true&&arenaDockState.phase!=='new-answer';
   $('arenaDockHead').setAttribute('aria-expanded',String(!body.hidden));
   $('arenaDockPreview').textContent=arenaDockState.preview||arenaDockState.error||'Nothing from Arena yet. Research with Arena — or chat while Arena is your provider — and the answer shows up here.';
+  syncArenaEmbed();
+}
+// ---------------------------------------------------------------------------
+// The embedded Arena. The frame is the real arena.ai, framed inside Orbit; the
+// framing-header override lives in src/arena-unframe.json and covers arena.ai
+// sub-frames only. In the workspace and the float window the frame sits in a real
+// tab, so the relay drives it directly (arena.js frame mode) — no separate tab
+// during runs. In the side panel the frame is view-only: you can type into it, and
+// the relay falls back to the dedicated tab.
+// ---------------------------------------------------------------------------
+let arenaEmbedFrame=null;
+function mountArenaEmbed(){
+  const host=$('arenaEmbedHost');
+  if(!host)return;
+  if(arenaEmbedFrame&&arenaEmbedFrame.isConnected)return;
+  const activeCfg=config();
+  const model=String(state.provider==='arena'?activeCfg.model:(state.profiles.arena?.model||'')).trim();
+  const frame=document.createElement('iframe');
+  frame.id='arenaFrame';
+  frame.title='Arena, embedded in Orbit';
+  frame.src=presets.arena+'/text/direct'+(model?'?model_a='+encodeURIComponent(model):'');
+  arenaEmbedFrame=frame;
+  host.replaceChildren(frame);
+}
+function unmountArenaEmbed(){
+  if(arenaEmbedFrame){arenaEmbedFrame.remove();arenaEmbedFrame=null;}
+  const host=$('arenaEmbedHost');
+  if(host)host.replaceChildren();
+}
+function reloadArenaEmbed(){
+  // After a tab-based sign-in the frame picks up the session on its next load.
+  if(arenaEmbedFrame&&arenaEmbedFrame.isConnected)arenaEmbedFrame.src=arenaEmbedFrame.src;
+}
+function syncArenaEmbed(){
+  const host=$('arenaEmbedHost');
+  if(!host)return;
+  const open=state.arenaEmbed===true&&ui.arenaEmbedOpen===true;
+  host.hidden=!open;
+  const btn=$('arenaDockEmbed');
+  if(btn){btn.textContent=open?'Close the embedded view':'Open Arena here';btn.hidden=state.arenaEmbed!==true;}
+  if(open)mountArenaEmbed();else unmountArenaEmbed();
 }
 // The dock stays honest between runs: while nothing is in flight it peeks at the relay
 // tab's auth state (read-only, never focuses it) every ten seconds. Anything it cannot
@@ -242,6 +284,8 @@ $('arenaDockConnect').onclick=safe(async()=>{
   if(!res.ok)arenaDockSet('failed',{error:res.error});
 });
 $('arenaDockOpen').onclick=safe(async()=>{const {arenaOpenForSignIn}=await import('./arena.js');await arenaOpenForSignIn();status('The Arena tab is in front.');});
+$('arenaDockEmbed').onclick=safe(()=>{ui.arenaEmbedOpen=ui.arenaEmbedOpen!==true;persistUI();renderArenaDock();});
+$('arenaEmbedOn').onchange=safe(async()=>{state.arenaEmbed=$('arenaEmbedOn').checked;if(!state.arenaEmbed)ui.arenaEmbedOpen=false;await save();persistUI();renderArenaDock();});
 $('arenaDockOn').onchange=safe(async()=>{state.arenaDock=$('arenaDockOn').checked;await save();renderArenaDock();});
 setInterval(()=>{safe(arenaDockPoll)();},10000);
 // The proactive half of the two-sided flow: when the relay tab holds an answer Orbit
@@ -1169,7 +1213,7 @@ async function testConnection(){
  return answer;
 }
 function fillModels(models,selected=''){const select=$('modelSelect'),list=$('modelList');select.replaceChildren();list.replaceChildren();const blank=element('option',models.length?'Choose a discovered model':'Fetch models or enter an ID');blank.value='';select.append(blank);for(const id of models){const o=element('option',id);o.value=id;select.append(o);const d=element('option');d.value=id;list.append(d);}if(selected&&models.includes(selected))select.value=selected;}
-function loadProfile(id){const p={...defaults,...(presetOverrides[id]||{}),base:presets[id],...state.profiles[id]};for(const f of fields){const el=$(f);if(!el)continue;if(typeof p[f]==='boolean')el.checked=p[f];else el.value=p[f]??'';}$('key').value='';const saved=keyFor(p.base);$('key').placeholder=saved?'Saved key ••••••••':'Enter once and save';$('keyHint').textContent=saved?'A key is saved for this endpoint. Leave blank to keep it.':'No key saved for this endpoint.';fillModels(modelCache[p.base]||[],p.model);$('settingsStatus').textContent='';const arena=id==='arena';$('base').readOnly=arena;$('key').disabled=arena;$('toggleKey').disabled=arena;for(const f of ['format','temperature','maxTokens','tokenField','effort','search','xsearch','code'])$(f).disabled=arena;if(arena){$('keyHint').textContent='Arena uses your signed-in browser tab — no API key needed.';$('model').placeholder='e.g. deepseek-v4.1-flash-high';}else{$('model').placeholder='Auto-selected or enter manually';}const note=$('arenaNote');if(note)note.hidden=!arena;const connectRow=$('arenaConnectRow');if(connectRow)connectRow.hidden=!arena;const dockRow=$('arenaDockRow');if(dockRow)dockRow.hidden=!arena;const dockOn=$('arenaDockOn');if(dockOn)dockOn.checked=state.arenaDock===true;}
+function loadProfile(id){const p={...defaults,...(presetOverrides[id]||{}),base:presets[id],...state.profiles[id]};for(const f of fields){const el=$(f);if(!el)continue;if(typeof p[f]==='boolean')el.checked=p[f];else el.value=p[f]??'';}$('key').value='';const saved=keyFor(p.base);$('key').placeholder=saved?'Saved key ••••••••':'Enter once and save';$('keyHint').textContent=saved?'A key is saved for this endpoint. Leave blank to keep it.':'No key saved for this endpoint.';fillModels(modelCache[p.base]||[],p.model);$('settingsStatus').textContent='';const arena=id==='arena';$('base').readOnly=arena;$('key').disabled=arena;$('toggleKey').disabled=arena;for(const f of ['format','temperature','maxTokens','tokenField','effort','search','xsearch','code'])$(f).disabled=arena;if(arena){$('keyHint').textContent='Arena uses your signed-in browser tab — no API key needed.';$('model').placeholder='e.g. deepseek-v4.1-flash-high';}else{$('model').placeholder='Auto-selected or enter manually';}const note=$('arenaNote');if(note)note.hidden=!arena;const connectRow=$('arenaConnectRow');if(connectRow)connectRow.hidden=!arena;const dockRow=$('arenaDockRow');if(dockRow)dockRow.hidden=!arena;const dockOn=$('arenaDockOn');if(dockOn)dockOn.checked=state.arenaDock===true;const embedRow=$('arenaEmbedRow');if(embedRow)embedRow.hidden=!arena;const embedOn=$('arenaEmbedOn');if(embedOn)embedOn.checked=state.arenaEmbed===true;}
 function readConfig(){const c={};for(const f of fields){const el=$(f);if(!el)continue;c[f]=['search','xsearch','code','saveHistory','smartContext','autoTitle','autoSafeActions','autoPilot'].includes(f)?el.checked:el.value.trim();}c.base=normalizeBase(c.base);if($('provider').value==='arena'){c.transport='arena';c.base=presets.arena;}return c;}
 async function grant(c){const ok=await chrome.permissions.request({origins:[hostPattern(c.base)]});if(!ok)throw Error('Provider access was not granted.');}
 async function discoverModels({quiet=false}={}){const c=readConfig();await grant(c);if(c.transport==='arena'){$('settingsStatus').textContent='Reading the Arena model picker…';const {arenaListModels}=await import('./arena.js');const models=await arenaListModels();modelCache[c.base]=models;fillModels(models,c.model);if(!c.model){$('model').value=models[0];$('modelSelect').value=models[0];}$('settingsStatus').textContent=`Listed ${models.length} Arena model${models.length===1?'':'s'}. Listing only proves the picker opened — press Test connection to check a model actually generates.`;if(!quiet)await writeLocal({orbitModels:modelCache});return models;}$('settingsStatus').textContent='Fetching the model list…';const entered=$('key').value.trim(),key=entered||keyFor(c.base),response=await fetch(c.base+'/models',{headers:key?{Authorization:'Bearer '+key}:{},credentials:'omit',redirect:'error',referrerPolicy:'no-referrer',signal:AbortSignal.timeout(20000)});if(!response.ok)throw Error(`Model list unavailable (HTTP ${response.status}). That is only the list endpoint — your model can still work. Set the model ID and press Test connection.`);const text=await response.text();if(text.length>2000000)throw Error('Model list too large.');const data=JSON.parse(text),models=[...new Set((Array.isArray(data)?data:data.data||data.models||[]).map(x=>typeof x==='string'?x:x?.id||x?.name).filter(Boolean))].slice(0,4000).sort();if(!models.length)throw Error('The provider returned no recognizable model IDs. That is only the list endpoint — set the model ID and press Test connection.');modelCache[c.base]=models;fillModels(models,c.model);if(!c.model){$('model').value=models[0];$('modelSelect').value=models[0];}$('settingsStatus').textContent=`Listed ${models.length} model${models.length===1?'':'s'}. Listing only proves the endpoint answers — press Test connection to check a model actually generates.`;if(!quiet)await writeLocal({orbitModels:modelCache});return models;}
