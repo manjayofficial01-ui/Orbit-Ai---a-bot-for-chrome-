@@ -1,13 +1,13 @@
 {
   "name": "orbit-ai",
-  "version": "3.5.0",
+  "version": "4.1.0",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "npm run build && npm run test:extension",
-    "test:extension": "node --test tests/core.test.mjs tests/agent.test.mjs tests/agent-loop.test.mjs tests/skills.test.mjs tests/memory.test.mjs tests/tasks.test.mjs tests/checkin.test.mjs tests/access.test.mjs tests/workspace.test.mjs tests/openbot-surface.test.mjs tests/a11y-static.test.mjs tests/hardening-static.test.mjs tests/ocr-static.test.mjs tests/provider-settings.test.mjs",
+    "test:extension": "node --test tests/core.test.mjs tests/arena.test.mjs tests/agent.test.mjs tests/agent-loop.test.mjs tests/skills.test.mjs tests/memory.test.mjs tests/tasks.test.mjs tests/checkin.test.mjs tests/access.test.mjs tests/workspace.test.mjs tests/openbot-surface.test.mjs tests/a11y-static.test.mjs tests/hardening-static.test.mjs tests/ocr-static.test.mjs tests/provider-settings.test.mjs tests/personas.test.mjs tests/cards.test.mjs tests/routines.test.mjs tests/voice.test.mjs tests/roster-surface.test.mjs",
     "verify:chrome": "npm run build && node scripts/verify-in-chrome.mjs",
-    "check": "npm run build && node --check dist/app.js && node --check dist/core.js && node --check dist/page-access.js && node --check dist/agent.js && node --check dist/agent-run.js && node --check dist/dialogs.js && node --check dist/skills.js && node --check dist/memory.js && node --check dist/tasks.js && node --check dist/checkin.js && node --check dist/background.js && node --check dist/ocr.js"
+    "check": "npm run build && node --check dist/app.js && node --check dist/core.js && node --check dist/arena.js && node --check dist/page-access.js && node --check dist/agent.js && node --check dist/agent-run.js && node --check dist/dialogs.js && node --check dist/skills.js && node --check dist/memory.js && node --check dist/tasks.js && node --check dist/checkin.js && node --check dist/background.js && node --check dist/ocr.js && node --check dist/personas.js && node --check dist/cards.js && node --check dist/voice.js && node --check dist/routines.js"
   }
 }

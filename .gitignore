@@ -29,3 +29,6 @@ orbit-agent/
 OpenDuet-main/
 # Session tooling artifacts
 .workbuddy-ai/
+
+# ZCode local session/workflow state
+.zcode/

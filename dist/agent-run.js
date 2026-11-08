@@ -4,6 +4,7 @@ import {AGENT_MAX_STEPS,AGENT_PROTOCOL_RETRIES,AGENT_TOOLS,buildAgentSystemPromp
 import {routeSkills,narrowTools,skillInstructions} from './skills.js';
 import {addMemory} from './memory.js';
 import {askConfirm} from './dialogs.js';
+import {askCard} from './cards.js';
 
 export async function resolveAgentTarget(){
   const active=await chrome.tabs.query({active:true,lastFocusedWindow:true});
@@ -168,13 +169,23 @@ export function askHandover(reason){
  * tests inject `approve` into runAgentLoop instead of mocking window.confirm.
  */
 export async function askStepApproval(message) {
-  return askConfirm({
-    title: 'Orbit wants to act',
-    body: 'Approve this step? Stopping ends the run.',
+  const answer = await askCard({
+    kind: 'approval',
+    title: 'Run this step?',
+    body: 'Approving runs the action below on the live page. Denying ends the run.',
     detail: message,
-    confirmLabel: 'Approve step',
-    cancelLabel: 'Stop the run',
+    options: ['Approve step', 'Stop the run'],
+  }, {
+    fallback: () => askConfirm({
+      title: 'Orbit wants to act',
+      body: 'Approve this step? Stopping ends the run.',
+      detail: message,
+      confirmLabel: 'Approve step',
+      cancelLabel: 'Stop the run',
+    }),
   });
+  // The panel resolves with the chosen option; the bare-document fallback resolves with a boolean.
+  return typeof answer === 'boolean' ? answer : /^approve/i.test(String(answer || ''));
 }
 
 export async function runAgentLoop({cfg,key,goal,onEvent,signal,approve,autoSafe=false,autopilot=false}){

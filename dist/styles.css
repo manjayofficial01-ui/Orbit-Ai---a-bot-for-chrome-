@@ -183,3 +183,386 @@ body[data-mode="popup"] #float{display:none}
 .memory-row .row button{min-height:32px;padding:0 11px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);font-size:.74rem}
 .memory-empty{font-size:.8rem;color:var(--muted)}
 @media(max-width:720px){.task-card{max-width:100%}.task-bar{padding:7px 9px}.task-bar-title{max-width:160px}.suggestion-cards{max-width:100%}}
+
+/* ==========================================================================
+   ORBIT 4 — the roster, the cards and the skins
+   --------------------------------------------------------------------------
+   Everything above this line is the 3.x layer and stays as the structural
+   floor. This block is the design system the 4.0 surface is built on.
+
+   Three rules hold it together:
+
+   1. A skin is nothing but a block of custom properties. `[data-skin]` is the
+      selector, not `:root[data-skin]`, so any element can open a skin context —
+      which is how the picker paints a live swatch instead of a mockup.
+   2. Every text/surface pair below clears WCAG AA (4.5:1) at body size. The
+      muted tones were chosen by measuring the rendered pair, not by taste.
+   3. No component hardcodes a colour. A surface that needs a tint asks for
+      color-mix() of a token, so a new skin needs no component edits.
+   ========================================================================== */
+
+:root{--ease:200ms cubic-bezier(.2,.8,.2,1);--radius-sm:8px;--radius-md:12px;--radius-lg:18px;--rail:56px}
+
+/* ── Midnight ─────────────────────────────────────────────────────────── */
+[data-skin="midnight"]{
+  color-scheme:dark;
+  --bg:#0b0d0d;--surface:#111414;--surface-2:#161a1a;--offset:#1c2121;--dynamic:#232a29;
+  --border:rgba(230,245,242,.13);--divider:rgba(230,245,242,.075);
+  --text:#e8efec;--muted:#a7b3af;--faint:#7f8b87;
+  --primary:#5fd0c4;--primary-hover:#7adcd1;--primary-soft:#17302e;--inverse:#04100f;
+  --danger:#ff8a93;--warning:#e6b071;--success:#63d29b;
+  --shadow:0 18px 55px rgba(0,0,0,.5);--code:#0a0c0c;--code-text:#dbe7e2;
+  --a-teal:#3fb3ab;--a-blue:#5b8dfa;--a-violet:#a077f0;--a-amber:#e0a35c;--a-rose:#ef7f97;--a-slate:#8ea1ad;
+}
+/* ── Daylight ─────────────────────────────────────────────────────────── */
+[data-skin="daylight"]{
+  color-scheme:light;
+  --bg:#f2f4f2;--surface:#fbfcfb;--surface-2:#fff;--offset:#e9ece9;--dynamic:#e0e4e0;
+  --border:rgba(20,28,26,.16);--divider:rgba(20,28,26,.09);
+  --text:#1b211f;--muted:#576360;--faint:#78837f;
+  --primary:#0b7a72;--primary-hover:#096760;--primary-soft:#d8ece9;--inverse:#f7fffd;
+  --danger:#a43b45;--warning:#8a5a15;--success:#1d7a4f;
+  --shadow:0 14px 45px rgba(35,37,32,.14);--code:#121817;--code-text:#e6f0ec;
+  --a-teal:#0f7d76;--a-blue:#2f5fd0;--a-violet:#6b45c4;--a-amber:#a06a20;--a-rose:#b84660;--a-slate:#54646f;
+}
+/* ── Atelier — daylight on paper ──────────────────────────────────────── */
+[data-skin="atelier"]{
+  color-scheme:light;
+  --bg:#f3ece1;--surface:#faf5ec;--surface-2:#fffdf8;--offset:#e9dfd0;--dynamic:#e0d4c2;
+  --border:rgba(58,44,30,.18);--divider:rgba(58,44,30,.1);
+  --text:#2c241a;--muted:#6b5b48;--faint:#8b7a66;
+  --primary:#9c5520;--primary-hover:#854718;--primary-soft:#f0ddc8;--inverse:#fff8ee;
+  --danger:#a13a2a;--warning:#8a5a15;--success:#3f6b3a;
+  --shadow:0 14px 40px rgba(72,54,34,.16);--code:#241d15;--code-text:#f2e9db;
+  --a-teal:#1d6f6a;--a-blue:#33569c;--a-violet:#6d4a94;--a-amber:#8f5a1c;--a-rose:#9c3f52;--a-slate:#5c5344;
+}
+/* ── Foundry — a dark room with warm light ────────────────────────────── */
+[data-skin="foundry"]{
+  color-scheme:dark;
+  --bg:#141110;--surface:#1a1614;--surface-2:#201b18;--offset:#262019;--dynamic:#2e2720;
+  --border:rgba(240,228,212,.14);--divider:rgba(240,228,212,.08);
+  --text:#f0e6d8;--muted:#b8a894;--faint:#8d7e6b;
+  --primary:#e0a35c;--primary-hover:#eeb572;--primary-soft:#33271b;--inverse:#1a1208;
+  --danger:#ff9a86;--warning:#e6b071;--success:#8fc48a;
+  --shadow:0 18px 55px rgba(0,0,0,.55);--code:#100d0b;--code-text:#f0e6d8;
+  --a-teal:#4fb8ae;--a-blue:#7ba0ff;--a-violet:#b48bf5;--a-amber:#e0a35c;--a-rose:#f08fa0;--a-slate:#a89a88;
+}
+
+/* Accent plates. The plate is a tint of the accent and the letter is the accent
+   blended toward the ink, so the same class works on a dark and a light skin. */
+[data-accent="teal"]{--accent:var(--a-teal)}
+[data-accent="blue"]{--accent:var(--a-blue)}
+[data-accent="violet"]{--accent:var(--a-violet)}
+[data-accent="amber"]{--accent:var(--a-amber)}
+[data-accent="rose"]{--accent:var(--a-rose)}
+[data-accent="slate"]{--accent:var(--a-slate)}
+
+.avatar{
+  --accent:var(--a-teal);
+  display:inline-grid;place-items:center;flex:0 0 auto;
+  width:30px;height:30px;border-radius:50%;
+  font-size:.72rem;font-weight:700;letter-spacing:.02em;line-height:1;
+  color:color-mix(in srgb,var(--accent) 62%,var(--text));
+  background:color-mix(in srgb,var(--accent) 17%,var(--surface-2));
+  border:1px solid color-mix(in srgb,var(--accent) 38%,transparent);
+  transition:transform var(--ease),border-color var(--ease),background-color var(--ease);
+}
+.avatar-sm{width:24px;height:24px;font-size:.64rem}
+.avatar-lg{width:38px;height:38px;font-size:.82rem}
+
+/* Presence: the one place a run's state is visible without reading anything. */
+.presence{width:7px;height:7px;border-radius:50%;background:var(--faint);flex:0 0 auto;box-shadow:0 0 0 2px var(--surface)}
+.presence-working{background:var(--primary);animation:presence-pulse 1.6s ease-in-out infinite}
+.presence-waiting{background:var(--warning)}
+.presence-idle{background:var(--faint)}
+@keyframes presence-pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+/* ── Roster strip: who answers ────────────────────────────────────────── */
+.roster-strip{display:flex;align-items:center;gap:6px;padding:0 2px 12px;min-width:0}
+.roster-list{display:flex;align-items:center;gap:6px;min-width:0;overflow-x:auto;scrollbar-width:none;padding:2px}
+.roster-list::-webkit-scrollbar{display:none}
+.roster-chip,.roster-add{
+  position:relative;flex:0 0 auto;height:32px;min-width:32px;padding:0 10px;
+  display:inline-flex;align-items:center;gap:6px;
+  border:1px solid var(--border);border-radius:999px;
+  background:var(--surface-2);color:var(--muted);
+  font-size:.72rem;font-weight:600;
+}
+.roster-chip:hover,.roster-add:hover{color:var(--text);border-color:color-mix(in srgb,var(--primary) 45%,var(--border))}
+.roster-chip[aria-pressed="true"]{color:var(--text);border-color:color-mix(in srgb,var(--accent,var(--primary)) 60%,var(--border));background:color-mix(in srgb,var(--accent,var(--primary)) 12%,var(--surface-2))}
+.roster-chip.is-all[aria-pressed="true"]{border-color:color-mix(in srgb,var(--primary) 60%,var(--border));background:var(--primary-soft);color:var(--text)}
+.roster-chip .avatar{width:20px;height:20px;font-size:.58rem;border-width:1px}
+.roster-chip .chip-name{max-width:88px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.roster-chip .presence{position:absolute;right:-1px;bottom:-1px;box-shadow:0 0 0 2px var(--surface-2)}
+.roster-add{width:32px;padding:0;justify-content:center;font-size:1rem;font-weight:500;border-style:dashed}
+
+/* ── Header: the persona pill ─────────────────────────────────────────── */
+.chat-head{
+  display:flex;align-items:center;gap:8px;min-width:0;max-width:100%;
+  padding:4px 10px 4px 5px;margin-left:2px;
+  border:1px solid transparent;border-radius:999px;text-align:left;
+}
+.chat-head:hover{border-color:var(--border);background:var(--surface-2)}
+.chat-head-text{display:flex;flex-direction:column;min-width:0;line-height:1.2}
+.chat-head-line{display:flex;align-items:center;gap:6px;min-width:0}
+.chat-head-line strong{font-size:.86rem;font-weight:650;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-head-text small{font-size:.68rem;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-head-caret{color:var(--faint);font-size:.7rem;flex:0 0 auto}
+
+/* The overflow panel: the header keeps three controls, the rest live here. */
+.more-panel{
+  position:absolute;top:calc(100% + 6px);right:8px;z-index:40;
+  display:flex;gap:2px;padding:6px;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-md);
+  box-shadow:var(--shadow);
+}
+.more-panel[hidden]{display:none}
+.more-panel .icon{min-width:38px;min-height:38px}
+header{position:relative}
+
+/* ── Inline cards ─────────────────────────────────────────────────────── */
+.orbit-card{
+  --accent:var(--primary);
+  margin:10px 0 2px;padding:12px 14px 11px;
+  border:1px solid color-mix(in srgb,var(--accent) 34%,var(--border));
+  border-left:3px solid var(--accent);
+  border-radius:var(--radius-md);
+  background:color-mix(in srgb,var(--accent) 6%,var(--surface-2));
+  max-width:min(100%,560px);
+}
+.orbit-card.settled{background:var(--surface-2);border-color:var(--border);border-left-color:color-mix(in srgb,var(--accent) 55%,var(--border));opacity:.92}
+.orbit-card.kind-question,.orbit-card.kind-options{--accent:var(--a-blue)}
+.orbit-card.kind-secret{--accent:var(--a-rose)}
+.orbit-card.kind-signin{--accent:var(--a-violet)}
+.orbit-card.kind-approval{--accent:var(--a-amber)}
+.card-head{display:flex;align-items:center;gap:6px;font-size:.68rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:color-mix(in srgb,var(--accent) 70%,var(--text))}
+.card-head span:first-child{font-size:.8rem}
+.card-kicker{font-size:.66rem}
+.card-title{margin-top:5px;font-size:.92rem;font-weight:600;line-height:1.35;color:var(--text)}
+.card-body{margin-top:3px;font-size:.82rem;line-height:1.5;color:var(--muted)}
+.card-detail{
+  margin-top:8px;padding:8px 10px;max-height:190px;overflow:auto;
+  font:.74rem/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
+  color:var(--text);background:var(--code);color:var(--code-text);
+  border-radius:var(--radius-sm);white-space:pre-wrap;word-break:break-word;
+}
+.card-actions{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-top:10px}
+.card-actions button{min-height:34px;padding:0 13px;border:1px solid var(--border);border-radius:999px;background:var(--surface);font-size:.78rem;font-weight:600}
+.card-actions button:hover:not(:disabled){border-color:color-mix(in srgb,var(--primary) 55%,var(--border));color:var(--text)}
+.card-actions button.primary{background:var(--primary);border-color:transparent;color:var(--inverse)}
+.card-dismiss{color:var(--muted)}
+.card-outcome{font-size:.78rem;font-weight:650;color:color-mix(in srgb,var(--accent) 65%,var(--text))}
+.card-hint{font-size:.68rem;color:var(--faint);margin-left:auto}
+
+/* ── Activity chips: what the run did, in one line each ───────────────── */
+.activity-block{margin:8px 0 0;border:1px solid var(--divider);border-radius:var(--radius-md);background:var(--surface-2);overflow:hidden}
+.activity-block>summary{
+  display:flex;align-items:center;gap:7px;padding:7px 10px;cursor:pointer;
+  font-size:.74rem;font-weight:600;color:var(--muted);list-style:none;
+}
+.activity-block>summary::-webkit-details-marker{display:none}
+.activity-block>summary::before{content:"▸";font-size:.66rem;color:var(--faint);transition:transform var(--ease)}
+.activity-block[open]>summary::before{transform:rotate(90deg)}
+.activity-block>summary:hover{color:var(--text)}
+.activity-list{list-style:none;padding:0 10px 9px;display:flex;flex-direction:column;gap:3px}
+.activity-chip{display:grid;grid-template-columns:16px 1fr auto;align-items:baseline;gap:7px;font-size:.74rem;line-height:1.45;color:var(--muted);padding:3px 0;border-top:1px solid var(--divider)}
+.activity-chip:first-child{border-top:0}
+.activity-chip .glyph{font-size:.7rem;text-align:center;color:var(--faint)}
+.activity-chip .step{font-variant-numeric:tabular-nums;font-size:.66rem;color:var(--faint)}
+.activity-chip.ok .glyph{color:var(--success)}
+.activity-chip.fail .glyph{color:var(--danger)}
+.activity-chip.fail .text{color:color-mix(in srgb,var(--danger) 60%,var(--text))}
+.activity-chip.deferred .glyph{color:var(--warning)}
+.activity-chip .text{min-width:0;overflow-wrap:anywhere}
+
+/* ── Messages ─────────────────────────────────────────────────────────── */
+.message{display:grid;grid-template-columns:30px minmax(0,1fr);gap:10px;align-items:start;margin:0 0 18px}
+.message.user{grid-template-columns:minmax(0,1fr);justify-items:end}
+.msg-main{min-width:0;width:100%}
+.message.user .msg-main{max-width:min(100%,88%)}
+.msg-head{display:flex;align-items:baseline;gap:7px;margin-bottom:3px}
+.msg-name{font-size:.76rem;font-weight:650;color:var(--text)}
+.msg-time{font-size:.66rem;color:var(--faint);font-variant-numeric:tabular-nums}
+.message .body{font-size:.9rem;line-height:1.6;overflow-wrap:anywhere}
+.message.user .body{
+  padding:9px 13px;border-radius:16px 16px 4px 16px;
+  background:var(--primary-soft);color:var(--text);
+  border:1px solid color-mix(in srgb,var(--primary) 22%,transparent);
+}
+.message.assistant .body p+p{margin-top:.6em}
+.message.assistant .body h2,.message.assistant .body h3,.message.assistant .body h4{margin:.9em 0 .35em;line-height:1.3}
+.message .message-actions{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:5px;opacity:0;transition:opacity var(--ease)}
+.message:hover .message-actions,.message:focus-within .message-actions{opacity:1}
+.message-actions button{min-height:26px;padding:0 8px;border-radius:var(--radius-sm);font-size:.68rem;color:var(--faint)}
+.message-actions button:hover{background:var(--offset);color:var(--text)}
+.message-actions span{font-size:.66rem;color:var(--faint)}
+
+/* ── Needs-you ────────────────────────────────────────────────────────── */
+.needs-section{margin:0 0 10px}
+.section-head{display:flex;align-items:center;justify-content:space-between;font-size:.66rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);padding:0 6px 5px}
+.section-head .count{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--warning);color:var(--inverse);font-size:.62rem;font-weight:700;letter-spacing:0}
+.needs-list{display:flex;flex-direction:column;gap:4px}
+.needs-item{display:flex;align-items:center;gap:7px;width:100%;padding:6px 8px;border-radius:var(--radius-sm);border:1px solid var(--divider);background:var(--surface-2);text-align:left;font-size:.76rem;color:var(--text)}
+.needs-item:hover{border-color:color-mix(in srgb,var(--warning) 55%,var(--border))}
+.needs-item .needs-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.needs-item .needs-tag{font-size:.62rem;color:var(--warning);font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+.needs-you-bar{display:flex;align-items:center;gap:8px;padding:6px 10px;margin:0 10px 4px;border:1px solid color-mix(in srgb,var(--warning) 45%,var(--border));border-radius:999px;background:color-mix(in srgb,var(--warning) 12%,var(--surface));font-size:.76rem;color:var(--text)}
+.needs-you-bar[hidden]{display:none}
+.needs-you-bar .bar-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.needs-you-bar button{min-height:28px;padding:0 11px;border-radius:999px;border:1px solid var(--border);font-size:.72rem;font-weight:600;background:var(--surface-2)}
+
+/* ── @mention completion ──────────────────────────────────────────────── */
+.mention-pop{
+  position:absolute;left:10px;right:10px;bottom:calc(100% - 4px);z-index:30;
+  display:flex;flex-direction:column;gap:2px;padding:5px;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow);
+}
+.mention-pop[hidden]{display:none}
+.mention-pop button{display:flex;align-items:center;gap:8px;min-height:34px;padding:0 9px;border-radius:var(--radius-sm);font-size:.8rem;text-align:left}
+.mention-pop button[aria-selected="true"],.mention-pop button:hover{background:var(--offset)}
+footer{position:relative}
+
+/* ── Persona dialog ───────────────────────────────────────────────────── */
+.persona-dialog{width:min(520px,calc(100vw - 24px))}
+.persona-dialog form{display:flex;flex-direction:column;max-height:min(86vh,760px)}
+.persona-head{display:flex;align-items:center;gap:10px}
+.persona-head h2{font-size:1rem;letter-spacing:-.01em}
+.persona-body{padding:4px 20px 16px;overflow:auto;display:flex;flex-direction:column;gap:12px}
+.persona-body label{display:flex;flex-direction:column;gap:5px;font-size:.78rem;font-weight:600;color:var(--muted)}
+.persona-body input,.persona-body textarea{
+  padding:9px 11px;border:1px solid var(--border);border-radius:var(--radius-sm);
+  background:var(--surface-2);color:var(--text);font-size:.84rem;font-weight:400;
+}
+.persona-body input:focus-visible,.persona-body textarea:focus-visible{border-color:var(--primary)}
+.accent-row{display:flex;gap:8px;flex-wrap:wrap}
+.accent-row button{width:26px;height:26px;border-radius:50%;border:2px solid transparent;background:var(--a-teal)}
+.accent-row button[data-accent="teal"]{background:var(--a-teal)}
+.accent-row button[data-accent="blue"]{background:var(--a-blue)}
+.accent-row button[data-accent="violet"]{background:var(--a-violet)}
+.accent-row button[data-accent="amber"]{background:var(--a-amber)}
+.accent-row button[data-accent="rose"]{background:var(--a-rose)}
+.accent-row button[data-accent="slate"]{background:var(--a-slate)}
+.accent-row button[aria-pressed="true"]{border-color:var(--text);box-shadow:0 0 0 2px var(--surface) inset}
+
+/* ── Personas in Settings ─────────────────────────────────────────────── */
+.personas-list,.routines-list{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+.persona-row,.routine-row{
+  display:flex;align-items:center;gap:9px;padding:8px 10px;
+  border:1px solid var(--divider);border-radius:var(--radius-sm);background:var(--surface-2);
+}
+.persona-row .who,.routine-row .who{min-width:0;flex:1}
+.persona-row .who strong,.routine-row .who strong{display:block;font-size:.82rem;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.persona-row .who small,.routine-row .who small{display:block;font-size:.7rem;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.persona-row button,.routine-row button{min-height:28px;padding:0 9px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:.72rem;background:var(--surface)}
+.persona-row.is-active{border-color:color-mix(in srgb,var(--accent,var(--primary)) 55%,var(--border))}
+.routine-form{display:flex;flex-direction:column;gap:9px;padding:10px;border:1px dashed var(--border);border-radius:var(--radius-md)}
+.routine-form label{display:flex;flex-direction:column;gap:4px;font-size:.76rem;font-weight:600;color:var(--muted)}
+.routine-form input,.routine-form textarea,.routine-form select{padding:7px 9px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2);color:var(--text);font-size:.8rem;font-weight:400}
+
+/* ── Skin picker ──────────────────────────────────────────────────────── */
+.skin-choices{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.skin-choices button{
+  display:flex;align-items:center;gap:8px;min-height:42px;padding:0 11px;
+  border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2);
+  font-size:.78rem;font-weight:600;
+}
+.skin-choices button[aria-pressed="true"]{border-color:var(--primary);box-shadow:0 0 0 1px var(--primary) inset}
+.skin-swatch{width:22px;height:22px;border-radius:6px;border:1px solid var(--border);flex:0 0 auto}
+.skin-midnight{background:linear-gradient(135deg,#111414 50%,#5fd0c4 50%)}
+.skin-daylight{background:linear-gradient(135deg,#fbfcfb 50%,#0b7a72 50%)}
+.skin-atelier{background:linear-gradient(135deg,#faf5ec 50%,#9c5520 50%)}
+.skin-foundry{background:linear-gradient(135deg,#1a1614 50%,#e0a35c 50%)}
+
+/* ── History rows get a persona mark ──────────────────────────────────── */
+.history-row .persona-dot{width:6px;height:6px;border-radius:50%;background:var(--accent,var(--faint));flex:0 0 auto;margin-right:6px;opacity:.9}
+.history-row button:first-child{display:flex;align-items:center}
+
+/* ── Welcome ──────────────────────────────────────────────────────────── */
+.welcome{max-width:520px;margin:56px auto;text-align:center}
+.welcome .orb{width:52px;height:52px;margin:0 auto 14px;display:grid;place-items:center;border-radius:50%;
+  background:color-mix(in srgb,var(--primary) 14%,var(--surface-2));color:var(--primary);font-size:1.4rem;
+  border:1px solid color-mix(in srgb,var(--primary) 30%,transparent)}
+.welcome h1{font-size:1.5rem;letter-spacing:-.02em;line-height:1.25}
+.welcome p{margin-top:8px;color:var(--muted);font-size:.88rem}
+.welcome-points{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:16px;list-style:none}
+.welcome-points li{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border:1px solid var(--border);border-radius:999px;background:var(--surface-2);font-size:.72rem;color:var(--muted)}
+.welcome-points li::before{content:"✓";color:var(--primary);font-weight:700}
+.suggestions{display:grid;gap:7px;margin-top:18px;text-align:left}
+
+/* ── Narrow surfaces: the rail folds into the sidebar ─────────────────── */
+@media(max-width:900px){
+  .chat-head-text small{max-width:34vw}
+  .more-panel .icon{min-width:34px;min-height:34px}
+}
+@media(max-width:720px){
+  .roster-strip{padding-bottom:9px}
+  .orbit-card{max-width:100%;padding:10px 11px}
+  .card-hint{display:none}
+  .message{grid-template-columns:24px minmax(0,1fr);gap:8px}
+  .avatar-sm{width:22px;height:22px;font-size:.6rem}
+  .message .message-actions{opacity:1}
+  .needs-you-bar{margin:0 6px 4px}
+  .skin-choices{grid-template-columns:1fr}
+  .persona-body{padding:2px 14px 12px}
+}
+@media(prefers-reduced-motion:reduce){
+  .presence-working{animation:none}
+}
+
+/* ── Shell layout ────────────────────────────────────────────────────────
+   main has five children now (header, the waiting bar, the transcript, the
+   status line, the composer), and the composer is a real single row. Both
+   are declared here rather than edited into the 3.x rules above, so the old
+   layer stays readable as the record of what it used to be. */
+/* `hidden` is the attribute the app actually sets on controls it disables, and any
+   author `display` rule outranks the user-agent `[hidden]{display:none}`. Without this,
+   a Stop button and a Read-aloud icon that were meant to be gone stay on screen. */
+[hidden]{display:none!important}
+main{grid-template-rows:auto auto minmax(0,1fr) auto auto}
+/* Rows are placed by name, not by document order: the waiting bar is hidden most of
+   the time, and a hidden grid item would otherwise shift every row below it up one —
+   which put the 1fr track on the status line and pushed the composer off screen. */
+header{grid-row:1}
+#needsYou{grid-row:2}
+#messages{grid-row:3}
+#status{grid-row:4}
+footer{grid-row:5}
+header{overflow:visible;z-index:5}
+#messages{padding:18px clamp(12px,3.2vw,40px) 26px}
+footer{display:flex;flex-direction:column;align-items:stretch;gap:0;padding:0 clamp(10px,3vw,28px) 10px;border-top:0;background:transparent;font-size:.78rem}
+.composer{width:100%;max-width:900px;margin:0 auto;border-radius:var(--radius-lg);background:var(--surface-2);box-shadow:none;position:relative;overflow:visible}
+.composer-row{display:flex;align-items:flex-end;gap:5px;padding:6px}
+#prompt{flex:1 1 auto;min-width:0;width:auto;min-height:0;max-height:180px;padding:10px 6px;resize:none;font-size:.92rem;line-height:1.5}
+.suggestions{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:7px}
+.suggestions button{grid-row:auto;grid-column:auto;min-height:46px;padding:9px 12px;text-align:left}
+/* An answer is prose, not a quote: the 3.x role plate boxed every paragraph. */
+.message.assistant .body{border:0;background:transparent;padding:0;border-radius:0}
+.message.user{display:grid;align-items:start;justify-items:end}
+.message.user .body{max-width:100%;width:auto}
+.message.user .msg-head{justify-content:flex-end}
+.roster-chip .presence{right:5px;bottom:5px;box-shadow:0 0 0 2px var(--surface-2)}
+.roster-chip{padding:0 16px 0 10px}
+/* A shortcut hint inside a filled button is the one place `--inverse` at 72% is too
+   faint to read; it is a label, not a watermark. */
+.primary kbd,.card-actions .primary kbd{color:var(--inverse);border-color:color-mix(in oklab,var(--inverse) 42%,transparent);opacity:.92}
+.composer-icon{min-width:34px;min-height:34px;border-radius:50%;flex:0 0 auto}
+.composer-send{min-width:34px;min-height:34px;border-radius:50%;padding:0;flex:0 0 auto;display:inline-grid;place-items:center}
+.agent-split{display:flex;align-items:center;flex:0 0 auto;border:1px solid var(--border);border-radius:999px;overflow:hidden;background:var(--surface)}
+.agent-main{padding:0 10px;min-height:32px;font-size:.76rem;font-weight:650;border-radius:0}
+.agent-caret{min-width:24px;min-height:32px;border-radius:0;border-left:1px solid var(--divider)}
+.stop-btn{background:var(--danger);color:var(--inverse);font-size:.76rem;font-weight:650;padding:0 12px;border-radius:999px;min-height:34px;border:0}
+#attachments{display:flex;flex-wrap:wrap;gap:5px;padding:0 2px 6px}
+#attachments button{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:4px 10px;border:1px solid var(--border);border-radius:999px;background:var(--surface-2);font-size:.72rem;color:var(--muted)}
+.history-empty{font-size:.78rem;color:var(--faint);padding:8px 6px;line-height:1.5}
+#history{overflow-y:auto;min-height:0;flex:1}
+.history-row button:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.history-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* The persona panel: switch at the top, edit below. One dialog serves both,
+   because "who is answering" and "how they answer" are the same question. */
+#personaSwitch{margin-bottom:4px}
+.persona-dialog .roster-chip{height:30px}
+.persona-dialog .roster-add{height:30px;width:30px}
+
+
+

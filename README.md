@@ -44,7 +44,7 @@ Do not delete the extracted folder while using the unpacked extension. This pack
 - Provider-hosted web search through Responses on official OpenAI/xAI hosts; returned URL annotations become source links.
 - Custom instructions and user-edited memory notes sent with each request. Memory is explicit, not automatically inferred from conversations.
 - Endpoint-bound keys persisted locally so setup is not repeated, with trusted-context storage restriction, no telemetry, no Orbit backend, optional per-provider host grants, and deletion/revocation controls.
-- Text-size controls, System/Light/Dark themes, WCAG-oriented focus states, and safe DOM rendering with basic heading/code-fence formatting. Raw HTML is displayed as text; remote images and scripts are not rendered.
+- Text-size controls, four colour skins (two dark, two light, all AA-checked), WCAG-oriented focus states, and safe DOM rendering with basic heading/code-fence formatting. Raw HTML is displayed as text; remote images and scripts are not rendered.
 
 ## What 3.0 adds (OpenDuet integration)
 
@@ -60,6 +60,46 @@ worker was added. Full detail in [docs/CHANGELOG-3.0.md](docs/CHANGELOG-3.0.md).
 - **Skills.** Six reusable instructions (`fill-a-form`, `extract-data`, `compare-pages`, `verify-a-claim`, `sign-in`, `navigate-and-read`) reachable from **Skills** or by typing `/slug`. A matched skill narrows the tools offered to the model, because a model picks the right tool reliably out of about ten and unreliably out of thirty. A skill adds no capability, an unmatched request keeps every tool, and every action still needs approval.
 - **Tap answers.** Reply chips under the newest answer when Orbit asks a closed question.
 - **Honest provenance and a concise voice in chat.** An answer read from a reference is cited; one from the model's own knowledge says so and is marked unverified. Ordinary answers are one to three short sentences.
+
+## What 4.0 adds (OpenMausBot port)
+
+Orbit 4.0 takes the parts of the open-source [OpenMausBot](https://github.com/milind-soni/OpenMausBot)
+agent app that survive the move from a self-hosted Electron desktop to a single extension. No backend, no
+process of its own, no new dependency. Full detail in [docs/CHANGELOG-4.0.md](docs/CHANGELOG-4.0.md);
+what was deliberately left behind, and why, in
+[docs/modernization/OPENMAUSBOT-RESEARCH.md](docs/modernization/OPENMAUSBOT-RESEARCH.md).
+
+- **A roster of up to 8 personas.** A persona is a name, a role, an accent colour, standing instructions
+  and an optional model override. The strip in the sidebar shows them with a presence dot and filters the
+  conversation list; the header pill shows who is answering and which model, and opens a panel that
+  switches and edits. **A persona never carries a credential** — keys stay bound to the endpoint they were
+  saved for, so switching persona cannot move a key to a host you did not choose. `@Name` in the composer
+  routes a turn without switching, and is stripped before the model reads it.
+- **Approval is a card in the transcript.** The per-step gate used to be a modal that hid the page it was
+  asking about. Every ask — an approval, a closed question — is now a message with its choices on it, and
+  a settled card keeps its record (`Approved`, `Denied`, `Answered: …`). Stop releases every card the run
+  is blocked on; a card whose run died with the last panel is marked `Expired` at boot instead of keeping
+  buttons that answer nothing. A modal remains only for the two cases that need one: a masked secret and a
+  hand-back. **Needs you** is one list — open cards, tasks waiting on input, routines that came due — in
+  the sidebar and above the composer.
+- **Agent steps are chips, not prose.** Steps are structured activity rows in a collapsible block, and the
+  answer body is a one-line outcome. The replay filter skips assistant rows with no content, so a card or
+  a log is never sent back to the provider as an empty turn.
+- **Presence that can say "waiting".** `working`, `waiting` and `idle`, derived from the facts the panel
+  already has. A run blocked on a question is not shown as working.
+- **Four skins as token blocks** — `midnight`, `daylight`, `atelier` (daylight on paper) and `foundry` (a
+  dark room with warm light). A skin is a block of custom properties under `[data-skin]`, every text pair
+  clears WCAG AA at body size, and switching one is an attribute write.
+- **Read aloud** on any finished answer, plus an opt-in auto-read and a voice picker. This uses the speech
+  engine Chrome ships: no key, no network, no billing. Markdown is rewritten for speech first — code
+  becomes "[code block]" and links keep their destination.
+- **Routines** — a prompt that comes back every N minutes, daily, or on weekdays at a time (12 max, a
+  15-minute floor). `chrome.alarms` wakes the worker, which marks the routine due and badges the icon; the
+  next Orbit surface that opens runs it through the ordinary send path, so it streams, saves and exports
+  like a typed message. **Nothing is pretended to have run in the background** — a routine that came due
+  while Orbit was closed runs when you next open it.
+- **A rebuilt shell**: the composer is one row, the header keeps three controls plus an overflow so the
+  persona pill has room at 400 px, and the assistant's answer is prose rather than a boxed quotation.
 
 ## Provider presets
 | Provider | Base URL | Starting format |

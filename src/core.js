@@ -6,7 +6,27 @@ export function normalizeBase(value) {
  return u.href.replace(/\/+$/,'');
 }
 export function hostPattern(base){const u=new URL(normalizeBase(base));return `${u.protocol}//${u.hostname}/*`;}
+// Arena's composer accepts one prompt, not separate role messages.
+export function arenaFlatten(messages){
+ const sys=[],turns=[];
+ for(const m of messages||[]){
+  let text='';
+  if(typeof m.content==='string')text=m.content;
+  else if(Array.isArray(m.content))for(const p of m.content){
+   if(p.type==='text'||p.type==='input_text')text+=p.text||'';
+   else if(p.type==='image_url'||p.type==='input_image')throw Error('The Arena relay is text-only. Use a direct API provider for image and screenshot tasks.');
+  }
+  if(m.role==='system')sys.push(text);else turns.push((m.role==='assistant'?'Assistant':'User')+': '+text);
+ }
+ if(!turns.length)throw Error('Nothing to send to Arena.');
+ const loneUser=turns.length===1&&!sys.length&&messages[0].role==='user';
+ const prompt=loneUser?turns[0].slice(6):(sys.length?'<instructions>\n'+sys.join('\n\n')+'\n</instructions>\n\n':'')+'<conversation>\n'+turns.join('\n\n')+'\n</conversation>\n\nContinue the conversation as Assistant. Reply with only the assistant’s next message, following the instructions above.';
+ if(!prompt.trim())throw Error('Nothing to send to Arena.');
+ if(prompt.length>60000)throw Error('Conversation exceeds the 60,000-character text budget. Export it and start a new chat.');
+ return prompt;
+}
 export function requestBody(config,messages){
+ if(config.transport==='arena'){if(!config.model?.trim())throw Error('Choose an Arena model in Settings.');arenaFlatten(messages);return {model:config.model,stream:true,messages};}
  const body={model:config.model,stream:true};
  if(!body.model?.trim())throw Error('Enter a model ID in settings.');
  if(config.format==='responses')Object.assign(body,{input:messages,store:false});else body.messages=messages;
@@ -38,6 +58,7 @@ export function requestAgentBody(config,messages){
   return body;
 }
 export async function generateOnce(config,key,messages,{signal,timeoutMs=120000}={}){
+  if(config.transport==='arena'){const m=await import('./arena.js');return m.arenaGenerateOnce(config,key,messages,{signal,timeoutMs});}
   const base=normalizeBase(config.base), body=requestAgentBody(config,messages);
   const ctl=new AbortController();
   const timer=setTimeout(()=>ctl.abort(),timeoutMs);
@@ -82,6 +103,7 @@ export async function readSSE(stream,onEvent){
  try{while(!ended){const {done,value}=await reader.read();if(done){buffer+=decoder.decode();drain(true);ended=true;}else{buffer+=decoder.decode(value,{stream:true});drain();}}}finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
 }
 export async function generate(config,key,messages,{signal,onText,onSources,onUsage,onSearch}){
+ if(config.transport==='arena'){const m=await import('./arena.js');return m.arenaGenerate(config,key,messages,{signal,onText,onSources,onUsage,onSearch});}
  const base=normalizeBase(config.base), body=requestBody(config,messages);
  const res=await fetch(base+(config.format==='responses'?'/responses':'/chat/completions'),{method:'POST',headers:{'Content-Type':'application/json',...(key?{Authorization:'Bearer '+key}:{})},body:JSON.stringify(body),signal,credentials:'omit',redirect:'error',referrerPolicy:'no-referrer'});
  if(!res.ok) {res.body?.cancel();throw Error(`Provider HTTP ${res.status}. Check your key, model, API format, quota and optional parameters.`);}

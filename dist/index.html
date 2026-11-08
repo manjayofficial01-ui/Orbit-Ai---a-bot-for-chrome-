@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="dark" data-skin="midnight">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -9,18 +9,33 @@
 <body>
 <a class="skip" href="#messages">Skip to conversation</a>
 <div id="app" class="app">
-  <aside id="sidebar" aria-label="Conversation navigation">
+  <aside id="sidebar" aria-label="Workspace navigation">
     <div class="brand-row">
       <div class="brand"><svg role="img" aria-label="Orbit AI" viewBox="0 0 32 32"><circle cx="16" cy="16" r="5" fill="currentColor"/><ellipse cx="16" cy="16" rx="14" ry="7" transform="rotate(-25 16 16)"/><circle cx="27" cy="10" r="2" fill="currentColor"/></svg><span>Orbit</span></div>
-      <button id="closeNav" class="icon" aria-label="Close conversation list">×</button>
+      <button id="closeNav" class="icon" aria-label="Close navigation">×</button>
     </div>
+
+    <div id="rosterStrip" class="roster-strip" role="group" aria-label="Personas">
+      <button id="rosterAll" class="roster-chip is-all" aria-pressed="true" title="Show every conversation">All</button>
+      <div id="rosterList" class="roster-list" role="group" aria-label="Your personas"></div>
+      <button id="rosterAdd" class="roster-add" aria-label="Add a persona" title="Add a persona">+</button>
+    </div>
+
     <button id="new" class="primary wide">New conversation <kbd id="newKbd">Ctrl+K</kbd></button>
     <button id="checkin" class="wide secondary" title="Check what's new: a read-only pass over the pages you have open and granted, suggesting next steps as cards. It never acts on its own.">What's new?</button>
+
     <label class="search"><span aria-hidden="true">⌕</span><input id="filter" placeholder="Search conversations" aria-label="Search conversations"></label>
+
+    <section id="needsSection" class="needs-section" aria-label="Waiting on you" hidden>
+      <div class="section-head"><span>Needs you</span><span id="needsCount" class="count" aria-hidden="true"></span></div>
+      <div id="needsList" class="needs-list" role="group" aria-label="Open questions and runs"></div>
+    </section>
+
     <section id="tasksSection" class="tasks-section" aria-label="Tasks" hidden>
       <div class="tasks-head">Tasks</div>
       <nav id="tasksList" aria-label="Task list"></nav>
     </section>
+
     <nav id="history" aria-label="Conversation history"></nav>
     <div id="sidebarResize" role="separator" aria-orientation="vertical" aria-label="Resize conversation panel" title="Drag to expand or shrink the panel. Double-click to reset." tabindex="0"></div>
     <div class="panel-size" role="group" aria-label="Conversation panel size">
@@ -30,33 +45,49 @@
     <div class="aside-footer"><span class="status-dot"></span><span>Local workspace</span><small>BYOP</small></div>
   </aside>
   <div id="navScrim" class="scrim" hidden></div>
+
   <main>
     <header>
       <div class="header-start">
-        <button id="menu" class="icon" aria-label="Open conversation list" title="Conversations">☰</button>
-        <button id="toggleNav" class="icon" aria-label="Show or hide conversation panel" title="Show/hide conversations (Ctrl+B)" aria-expanded="true">◫</button>
+        <button id="menu" class="icon" aria-label="Open navigation" title="Conversations">☰</button>
+        <button id="toggleNav" class="icon" aria-label="Show or hide navigation" title="Show/hide conversations (Ctrl+B)" aria-expanded="true">◫</button>
         <button id="back" class="icon" aria-label="Go back" title="Back">←</button>
         <button id="forward" class="icon" aria-label="Go forward" title="Forward">→</button>
-        <div class="conversation-title"><strong id="title">New conversation</strong><small id="connection">Connect your AI provider</small></div>
+        <button id="chatHead" class="chat-head" aria-haspopup="dialog" aria-controls="personaDialog" title="Open this persona">
+          <span id="chatHeadAvatar" class="avatar avatar-sm accent-teal" aria-hidden="true">O</span>
+          <span class="chat-head-text">
+            <span class="chat-head-line"><strong id="title">New conversation</strong><span id="chatPresence" class="presence presence-idle" aria-hidden="true"></span></span>
+            <small id="connection">Connect your AI provider</small>
+          </span>
+          <span class="chat-head-caret" aria-hidden="true">▾</span>
+        </button>
       </div>
       <div class="header-actions">
-        <button id="textSmaller" class="icon text-control" aria-label="Decrease text size" title="Decrease text">A−</button>
-        <button id="textLarger" class="icon text-control" aria-label="Increase text size" title="Increase text">A+</button>
         <button id="regenerate" class="icon" aria-label="Regenerate the last answer" title="Regenerate the last answer">↻</button>
-        <button id="export" class="icon" aria-label="Export conversation as Markdown" title="Export as Markdown">⤓</button>
-        <button id="theme" class="icon" aria-label="Toggle color theme" title="Theme">◐</button>
-        <button id="winShrink" class="icon win-resize" aria-label="Shrink floatable window" title="Shrink floatable window">−</button>
-        <button id="winGrow" class="icon win-resize" aria-label="Expand floatable window" title="Expand floatable window">+</button>
-        <button id="float" class="icon" aria-label="Open floatable window" title="Open floatable window">⧉</button>
-        <button id="expand" class="icon" aria-label="Open full workspace" title="Open full workspace">↗</button>
+        <button id="speak" class="icon" aria-label="Read the last answer aloud" title="Read the last answer aloud" hidden>◍</button>
+        <button id="moreToggle" class="icon" aria-label="More workspace actions" aria-expanded="false" aria-controls="morePanel" title="More">⋯</button>
+        <div id="morePanel" class="more-panel" role="group" aria-label="More workspace actions" hidden>
+          <button id="textSmaller" class="icon text-control" aria-label="Decrease text size" title="Decrease text">A−</button>
+          <button id="textLarger" class="icon text-control" aria-label="Increase text size" title="Increase text">A+</button>
+          <button id="export" class="icon" aria-label="Export conversation as Markdown" title="Export as Markdown">⤓</button>
+          <button id="theme" class="icon" aria-label="Change the colour skin" title="Skin">◐</button>
+          <button id="winShrink" class="icon win-resize" aria-label="Shrink floatable window" title="Shrink floatable window">−</button>
+          <button id="winGrow" class="icon win-resize" aria-label="Expand floatable window" title="Expand floatable window">+</button>
+          <button id="float" class="icon" aria-label="Open floatable window" title="Open floatable window">⧉</button>
+          <button id="expand" class="icon" aria-label="Open full workspace" title="Open full workspace">↗</button>
+        </div>
         <button id="settings">Settings</button>
       </div>
     </header>
+
+    <div id="needsYou" class="needs-you-bar" role="group" aria-label="Orbit is waiting for you" hidden></div>
     <section id="messages" tabindex="-1" aria-label="Conversation"></section>
     <div id="status" role="status" aria-live="polite"></div>
+
     <footer>
       <div id="attachments" role="group" aria-label="Attached context"></div>
       <div id="taskBar" class="task-bar" role="group" aria-label="Task actions" hidden></div>
+      <div id="mentionPop" class="mention-pop" role="listbox" aria-label="Personas you can address" hidden></div>
       <div class="composer">
         <div class="composer-row">
           <button id="attach" class="icon composer-icon" aria-label="Attach a page, screenshot, file, or pick a skill" aria-haspopup="menu" title="Attach page · Screenshot · File · Skills">+</button>
@@ -74,18 +105,58 @@
   </main>
 </div>
 
+<dialog id="personaDialog" class="persona-dialog" aria-labelledby="personaTitle">
+<form id="personaForm">
+  <div class="dialog-head">
+    <div class="persona-head">
+      <span id="personaAvatar" class="avatar accent-teal" aria-hidden="true">O</span>
+      <div><span class="eyebrow">Persona</span><h2 id="personaTitle">Orbit</h2></div>
+    </div>
+    <button type="button" id="personaClose" class="icon" aria-label="Close persona">×</button>
+  </div>
+  <div class="persona-body">
+    <div id="personaSwitch" class="roster-strip" role="group" aria-label="Switch persona"></div>
+    <div class="form-grid two">
+      <label>Name<input id="personaName" maxlength="32" required autocomplete="off"></label>
+      <label>Role<input id="personaTitleInput" maxlength="48" placeholder="What this persona is for" autocomplete="off"></label>
+    </div>
+    <label>Model override<input id="personaModel" maxlength="120" placeholder="Leave empty to use the workspace model" autocomplete="off"><small>One endpoint, many brains: this persona asks the same provider for a different model. Your key stays bound to the endpoint.</small></label>
+    <label>Standing instructions<textarea id="personaInstructions" rows="5" maxlength="8000" placeholder="How this persona should work, every time"></textarea></label>
+    <fieldset>
+      <legend>Accent</legend>
+      <div id="personaAccent" class="accent-row" role="group" aria-label="Accent colour">
+        <button type="button" data-accent="teal" aria-label="Teal"></button>
+        <button type="button" data-accent="blue" aria-label="Blue"></button>
+        <button type="button" data-accent="violet" aria-label="Violet"></button>
+        <button type="button" data-accent="amber" aria-label="Amber"></button>
+        <button type="button" data-accent="rose" aria-label="Rose"></button>
+        <button type="button" data-accent="slate" aria-label="Slate"></button>
+      </div>
+    </fieldset>
+    <p id="personaStatus" role="status" aria-live="polite"></p>
+  </div>
+  <div class="dialog-actions">
+    <button type="button" id="personaDelete" class="danger">Delete persona</button>
+    <span class="spacer"></span>
+    <button type="button" id="personaCancel">Cancel</button>
+    <button type="submit" id="personaSave" class="primary">Save persona</button>
+  </div>
+</form>
+</dialog>
+
 <dialog id="settingsDialog" class="settings-dialog" aria-labelledby="settingsTitle">
 <form id="settingsForm">
   <div class="dialog-head"><div><span class="eyebrow">Workspace settings</span><h2 id="settingsTitle">Connect your provider</h2></div><button type="button" id="closeSettings" class="icon" aria-label="Close settings">×</button></div>
-  <nav class="settings-tabs" aria-label="Settings sections"><button type="button" data-settings-tab="connection" class="active">Connection</button><button type="button" data-settings-tab="context">Context</button><button type="button" data-settings-tab="appearance">Appearance</button><button type="button" data-settings-tab="advanced">Advanced</button></nav>
+  <nav class="settings-tabs" aria-label="Settings sections"><button type="button" data-settings-tab="connection" class="active">Connection</button><button type="button" data-settings-tab="context">Context</button><button type="button" data-settings-tab="personas">Personas</button><button type="button" data-settings-tab="routines">Routines</button><button type="button" data-settings-tab="appearance">Appearance</button><button type="button" data-settings-tab="advanced">Advanced</button></nav>
   <section data-settings-panel="connection">
     <p class="section-note">Your key stays on this device. Orbit reuses it after restart until you remove it.</p>
-    <div class="form-grid two"><label>Provider profile<select id="provider"><option value="openai">OpenAI</option><option value="xai">xAI / Grok</option><option value="google">Google Gemini</option><option value="openrouter">OpenRouter</option><option value="ollama">Ollama local</option><option value="custom">Custom compatible</option></select></label><label>API format<select id="format"><option value="chat">Chat Completions</option><option value="responses">Responses</option></select></label></div>
+    <div class="form-grid two"><label>Provider profile<select id="provider"><option value="openai">OpenAI</option><option value="xai">xAI / Grok</option><option value="google">Google Gemini</option><option value="openrouter">OpenRouter</option><option value="ollama">Ollama local</option><option value="arena">Arena (arena.ai)</option><option value="custom">Custom compatible</option></select></label><label>API format<select id="format"><option value="chat">Chat Completions</option><option value="responses">Responses</option></select></label></div>
     <label>API base URL<input id="base" type="url" required placeholder="https://api.example.com/v1"></label>
     <label>API key<div class="input-action"><input id="key" type="password" autocomplete="off" placeholder="Saved locally after connection"><button type="button" id="toggleKey">Show</button></div><small id="keyHint">Enter once; leave unchanged to keep the saved key.</small></label>
     <div class="form-grid model-row"><label>Model<select id="modelSelect" aria-label="Available models"><option value="">Fetch models to choose</option></select></label><label>Exact model ID<input id="model" list="modelList" required placeholder="Auto-selected or enter manually"><datalist id="modelList"></datalist></label></div>
     <div class="row"><button type="button" id="models">Fetch models</button><button type="button" id="testModel" class="primary">Test connection</button><button type="button" id="revoke">Forget key & revoke access</button></div>
           <p class="section-note">Fetching the list and testing a model are separate on purpose: a provider can refuse <code>/models</code> while your chosen model answers fine, and a listed model is not proof it generates. Testing sends one small live request to the model named above and may cost a fraction of a cent.</p>
+    <p class="section-note" id="arenaNote" hidden><strong>Arena tab relay — experimental, no API key</strong>. Arena’s Terms prohibit automated access without permission; a free account or low usage does not grant permission. Use an authorized API provider for reliable autonomous agents. If Arena permits your use, sign in and review any Terms yourself in Orbit’s dedicated tab, then Fetch models → choose a model → Test connection → Save connection. Orbit brings the relay tab forward during requests and returns replies once generation finishes. Prompts, instructions and attached page text are sent to Arena and use your daily credits. Text only — images, screenshots, hosted tools and API generation settings are unsupported. Orbit never accepts legal terms or solves sign-in challenges for you.</p>
   </section>
   <section data-settings-panel="context" hidden>
     <label class="check"><input id="fullAccess" type="checkbox"> <span><strong>Full access — all sites</strong><small>Grant Orbit every website at once: the agent, page context, fetches, screenshots and What's new then work on any site without a per-site prompt. Chrome shows one prompt for this. Turning it off removes the blanket grant (per-site approvals you already made stay; Reset in Advanced clears everything). Orbit's own action approvals are separate and always apply. If Chrome's prompt does not appear, grant it manually: chrome://extensions → Orbit → Details → Site access → On all sites.</small></span></label>
@@ -104,9 +175,45 @@
       <div id="memoryList" aria-live="polite"></div>
     </fieldset>
   </section>
+  <section data-settings-panel="personas" hidden>
+    <p class="section-note">A persona is a name, a colour and standing instructions. The roster keeps each kind of work in its own voice without cloning your key: every persona asks the same provider, and an optional model override changes only which model answers.</p>
+    <div id="personasList" class="personas-list" role="group" aria-label="Personas"></div>
+    <div class="row"><button type="button" id="personaAdd">Add a persona</button><button type="button" id="personaEditActive">Edit the active persona</button></div>
+    <p class="section-note">Address a persona in the composer with <code>@name</code> to have it answer without switching. Orbit also accepts a click on its avatar in the roster.</p>
+  </section>
+  <section data-settings-panel="routines" hidden>
+    <p class="section-note">A routine is a prompt that comes back on its own. Chrome wakes Orbit when the time is due; if no Orbit surface is open, the run happens the next time you open one. Nothing runs in the background.</p>
+    <div id="routinesList" class="routines-list" role="group" aria-label="Routines"></div>
+    <div class="routine-form">
+      <label>Routine name<input id="routineName" maxlength="48" placeholder="Morning digest" autocomplete="off"></label>
+      <label>What to ask<textarea id="routinePrompt" rows="3" maxlength="4000" placeholder="Summarize what changed in my open tabs since yesterday"></textarea></label>
+      <div class="form-grid two">
+        <label>Schedule<select id="routineKind"><option value="daily">Daily</option><option value="weekdays">Weekdays</option><option value="interval">Every few hours</option></select></label>
+        <label>Time<input id="routineTime" type="time" value="09:00"></label>
+      </div>
+      <div class="form-grid two">
+        <label>Interval (minutes)<input id="routineMinutes" type="number" min="15" max="1440" step="15" value="60"></label>
+        <label>Answers as<select id="routinePersona" aria-label="Persona for this routine"><option value="">Active persona</option></select></label>
+      </div>
+      <div class="row"><button type="button" id="routineAdd" class="primary">Add routine</button></div>
+    </div>
+    <p id="routinesStatus" role="status" aria-live="polite"></p>
+  </section>
   <section data-settings-panel="appearance" hidden>
     <fieldset><legend>Text size</legend><div id="fontChoices" class="segmented"><button type="button" data-font="small">Small</button><button type="button" data-font="medium">Medium</button><button type="button" data-font="large">Large</button><button type="button" data-font="xlarge">Extra large</button></div></fieldset>
-    <fieldset><legend>Theme</legend><div id="themeChoices" class="segmented"><button type="button" data-theme-choice="system">System</button><button type="button" data-theme-choice="light">Light</button><button type="button" data-theme-choice="dark">Dark</button></div></fieldset>
+    <fieldset><legend>Skin</legend>
+      <div id="skinChoices" class="skin-choices" role="group" aria-label="Colour skin">
+        <button type="button" data-skin-choice="midnight"><span class="skin-swatch skin-midnight" aria-hidden="true"></span>Midnight</button>
+        <button type="button" data-skin-choice="daylight"><span class="skin-swatch skin-daylight" aria-hidden="true"></span>Daylight</button>
+        <button type="button" data-skin-choice="atelier"><span class="skin-swatch skin-atelier" aria-hidden="true"></span>Atelier</button>
+        <button type="button" data-skin-choice="foundry"><span class="skin-swatch skin-foundry" aria-hidden="true"></span>Foundry</button>
+      </div>
+      <small>Every skin clears WCAG AA for body text on its own surface. Follow the system by leaving this on the one that matches.</small>
+    </fieldset>
+    <fieldset><legend>Voice</legend>
+      <label class="check"><input id="autoSpeak" type="checkbox"> <span><strong>Read answers aloud automatically</strong><small>Uses the speech engine Chrome already ships. No key, no network, no billing.</small></span></label>
+      <label>Voice<select id="voicePick" aria-label="Speech voice"><option value="">Browser default</option></select></label>
+    </fieldset>
   </section>
   <section data-settings-panel="advanced" hidden>
     <div class="form-grid two"><label>Temperature<input id="temperature" type="number" min="0" max="2" step="0.1" placeholder="Provider default"></label><label>Output token cap<input id="maxTokens" type="number" min="1" max="128000" placeholder="Provider default"></label><label>Chat token parameter<select id="tokenField"><option>max_completion_tokens</option><option>max_tokens</option></select></label><label>Reasoning effort<select id="effort"><option value="">Provider default</option><option>low</option><option>medium</option><option>high</option></select></label></div>
