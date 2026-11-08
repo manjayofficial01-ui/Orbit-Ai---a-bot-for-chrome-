@@ -193,3 +193,16 @@ test('the embedded Arena mounts in the dock, gated, wired and labelled',()=>{
   assert.match(app,/state\.arenaEmbed=\$\('arenaEmbedOn'\)\.checked/);
   assert.match(app,/reloadArenaEmbed\(\)/,'a tab-based sign-in refreshes the embedded frame');
 });
+
+test('the embedded Arena is resizable: drag grip, keyboard, persisted height',()=>{
+  assert.match(html,/id="arenaEmbedResize"[^>]*role="separator"/);
+  assert.match(html,/id="arenaEmbedResize"[^>]*aria-label="Resize the embedded Arena"/);
+  assert.match(html,/id="arenaEmbedResize"[^>]*tabindex="0"/);
+  assert.match(app,/function wireArenaEmbedResize\(\)/);
+  assert.match(app,/handle\.setPointerCapture\(e\.pointerId\)/,'the drag survives leaving the grip');
+  assert.match(app,/clampArenaEmbedHeight/,'the height is clamped so the composer stays usable');
+  assert.match(app,/delete ui\.arenaEmbedHeight/,'double-click and Home reset the height');
+  assert.match(app,/applyArenaEmbedHeight\(\);/,'sync applies the persisted height');
+  assert.match(styles,/height:var\(--arena-embed-height/,'the height travels through one custom property');
+  assert.match(styles,/#arenaEmbedHost:not\(\[hidden\]\)\+#arenaEmbedResize\{display:block\}/,'the grip shows only while the embed is open');
+});

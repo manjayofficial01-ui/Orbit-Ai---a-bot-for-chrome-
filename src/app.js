@@ -252,8 +252,42 @@ function syncArenaEmbed(){
   host.hidden=!open;
   const btn=$('arenaDockEmbed');
   if(btn){btn.textContent=open?'Close the embedded view':'Open Arena here';btn.hidden=state.arenaEmbed!==true;}
+  applyArenaEmbedHeight();
   if(open)mountArenaEmbed();else unmountArenaEmbed();
 }
+// The embedded Arena is resizable: drag the grip below it (or use the arrow keys on
+// it), double-click or Home to reset. Mirrors the sidebar-resize pattern; the height
+// persists in orbitUI and the transcript keeps its 1fr row while the dock row grows.
+function applyArenaEmbedHeight(){
+  if(ui.arenaEmbedHeight)document.documentElement.style.setProperty('--arena-embed-height',ui.arenaEmbedHeight+'px');
+  else document.documentElement.style.removeProperty('--arena-embed-height');
+}
+function clampArenaEmbedHeight(px){
+  return Math.max(200,Math.min(px,Math.max(240,window.innerHeight-300)));
+}
+(function wireArenaEmbedResize(){
+  const handle=$('arenaEmbedResize');
+  if(!handle)return;
+  let dragging=false;
+  const current=()=>{const host=$('arenaEmbedHost');return host?Math.round(host.getBoundingClientRect().height)||440:440;};
+  const live=px=>{ui.arenaEmbedHeight=clampArenaEmbedHeight(px);applyArenaEmbedHeight();};
+  handle.addEventListener('pointerdown',e=>{const host=$('arenaEmbedHost');if(!host||host.hidden)return;dragging=true;try{handle.setPointerCapture(e.pointerId);}catch{}e.preventDefault();});
+  handle.addEventListener('pointermove',e=>{
+    if(!dragging)return;
+    const host=$('arenaEmbedHost');
+    if(!host)return;
+    live(e.clientY-host.getBoundingClientRect().top);
+  });
+  const end=()=>{if(!dragging)return;dragging=false;persistUI();};
+  handle.addEventListener('pointerup',end);
+  handle.addEventListener('pointercancel',end);
+  handle.addEventListener('dblclick',()=>{delete ui.arenaEmbedHeight;applyArenaEmbedHeight();persistUI();});
+  handle.addEventListener('keydown',e=>{
+    if(e.key==='ArrowUp'){e.preventDefault();live(current()+24);}
+    else if(e.key==='ArrowDown'){e.preventDefault();live(current()-24);}
+    else if(e.key==='Home'){e.preventDefault();delete ui.arenaEmbedHeight;applyArenaEmbedHeight();persistUI();}
+  });
+})();
 // The dock stays honest between runs: while nothing is in flight it peeks at the relay
 // tab's auth state (read-only, never focuses it) every ten seconds. Anything it cannot
 // know leaves the phase untouched.

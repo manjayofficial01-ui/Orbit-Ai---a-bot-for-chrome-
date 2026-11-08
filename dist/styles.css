@@ -588,5 +588,9 @@ footer{display:flex;flex-direction:column;align-items:stretch;gap:0;padding:0 cl
 
 /* The embedded Arena: the real site, framed inside Orbit. */
 #arenaEmbedHost{margin:0 0 8px;border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden;background:var(--surface)}
-#arenaEmbedHost:not([hidden]){height:min(440px,48vh)}
+#arenaEmbedHost:not([hidden]){height:var(--arena-embed-height,min(440px,48vh))}
+#arenaEmbedResize{display:none;height:12px;margin:0 0 8px;cursor:ns-resize;touch-action:none;border-radius:6px;position:relative}
+#arenaEmbedResize::after{content:'';position:absolute;left:50%;top:4px;height:3px;width:72px;transform:translateX(-50%);border-radius:2px;background:var(--divider)}
+#arenaEmbedResize:hover::after,#arenaEmbedResize:focus-visible::after{background:var(--muted)}
+#arenaEmbedHost:not([hidden])+#arenaEmbedResize{display:block}
 #arenaEmbedHost iframe{display:block;width:100%;height:100%;border:0;background:var(--surface)}

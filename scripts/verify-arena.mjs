@@ -101,6 +101,8 @@ await clickTrusted(ui,'#arenaDockEmbed');
 await sleep(8000);
 const frameProbe=await ev(ui,`try{const [tab]=await chrome.tabs.query({active:true,currentWindow:true});const frames=await chrome.webNavigation.getAllFrames({tabId:tab.id});const f=frames.find(x=>(x.url||'').startsWith('https://arena.ai'));if(!f)return {frame:false,frames:frames.map(x=>x.url.slice(0,40))};const res=await chrome.scripting.executeScript({target:{tabId:tab.id,frameIds:[f.frameId]},func:()=>({origin:location.origin,composer:!!document.querySelector('textarea')})});return {frame:true,...res[0].result};}catch(e){return {error:String(e&&e.message||e).slice(0,120)}}`);
 record('the embedded Arena frame renders and is drivable',frameProbe?.frame===true&&frameProbe?.origin==='https://arena.ai'&&frameProbe?.composer===true,JSON.stringify(frameProbe));
+const grip=await ev(ui,`document.getElementById('arenaDockEmbed').click();await new Promise(r=>setTimeout(r,2000));const h=document.getElementById('arenaEmbedResize'),host=document.getElementById('arenaEmbedHost');return {h:!!h,display:h?getComputedStyle(h).display:null,hostHidden:host?host.hidden:null,sibling:host?host.nextElementSibling?.id:null};`);
+record('the embed resize grip is present and visible',grip?.h===true&&grip?.display!=='none'&&grip?.sibling==='arenaEmbedResize',JSON.stringify(grip));
 const forward=(await ev(ui,`const ts=await chrome.tabs.query({});return ts.filter(t=>String(t.url||'').startsWith('https://arena.ai')).map(t=>({active:t.active}));`));
 record('the relay tab was foregrounded for sign-in',Array.isArray(forward)&&forward.some(t=>t.active),JSON.stringify(forward));
 

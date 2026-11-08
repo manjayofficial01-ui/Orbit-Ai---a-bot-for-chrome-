@@ -60,3 +60,13 @@ does exactly that, and nothing more:
 - `state.arenaEmbed` (default on) gates the feature; `ui.arenaEmbedOpen` remembers the
   pane. Turning embedding off removes the iframe and the relay returns to tab mode —
   everything else keeps working.
+
+## Refinement (4.5.1) — the embedded Arena is resizable
+
+The embedded view shipped at a fixed 440 px and felt congested. It is now resizable:
+drag the grip below the frame (or focus it and use the arrow keys) to grow it as tall
+as the window allows, double-click or press Home to reset. The height persists in
+`orbitUI` (`ui.arenaEmbedHeight`, clamped so the composer stays reachable) and flows
+through one custom property, `--arena-embed-height` — the transcript keeps its `1fr`
+row while the dock row grows. Mirrors the sidebar-resize pattern exactly (pointer
+capture, persist-on-release, keyboard support).
