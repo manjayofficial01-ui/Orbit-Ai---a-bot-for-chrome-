@@ -35,3 +35,6 @@ OpenDuet-main/
 
 # local experiments
 scratch/
+
+# Chrome regenerates this when loading the unpacked extension
+dist/_metadata/
