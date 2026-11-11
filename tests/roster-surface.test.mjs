@@ -203,6 +203,16 @@ test('the embedded Arena is resizable: drag grip, keyboard, persisted height',()
   assert.match(app,/clampArenaEmbedHeight/,'the height is clamped so the composer stays usable');
   assert.match(app,/delete ui\.arenaEmbedHeight/,'double-click and Home reset the height');
   assert.match(app,/applyArenaEmbedHeight\(\);/,'sync applies the persisted height');
-  assert.match(styles,/height:var\(--arena-embed-height/,'the height travels through one custom property');
+  assert.match(styles,/height:min\(var\(--arena-embed-height/,'the height travels through one custom property, capped so the composer always fits');
   assert.match(styles,/#arenaEmbedHost:not\(\[hidden\]\)\+#arenaEmbedResize\{display:block\}/,'the grip shows only while the embed is open');
+});
+
+test('the audit fixes hold: compact embed mode, height cap, narrow header, prompt floor',()=>{
+  assert.match(styles,/#arenaDockBody\.has-embed #arenaDockPreview\{display:none\}/,'the stale text preview yields to the live frame');
+  assert.match(styles,/height:min\(var\(--arena-embed-height,min\(440px,48vh\)\),calc\(100dvh - 380px\)\)/,'a stale persisted height can never push the composer off-screen');
+  assert.match(app,/body\.classList\.toggle\('has-embed',open\)/);
+  assert.match(app,/btn\.textContent=open\?'Close':'Open Arena here'/,'the toggle reads as an action, not a state');
+  assert.match(styles,/\@media\(max-width:400px\)\{\.chat-head-text\{display:none\}/,'320px panels drop the title block instead of clipping Settings');
+  assert.doesNotMatch(styles,/\.conversation-title\{/,'dead CSS from the old layout must not linger');
+  assert.match(styles,/min-height:64px;max-height:180px/,'the composer placeholder never clips its second line');
 });

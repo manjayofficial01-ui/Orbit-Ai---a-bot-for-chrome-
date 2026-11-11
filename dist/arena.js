@@ -142,9 +142,13 @@ function driverRead(){
   // document order alone. User and answer bubbles both carry prose classes — a bubble is
   // the person's when it is right-aligned. The census travels with every read so a site
   // redesign is diagnosable from the error text alone.
-  const list=main.querySelector('ol')||main;
-  let roots=[...list.children];
-  if(!roots.length)roots=[...main.querySelectorAll('div')].filter(d=>d.querySelector('.prose, .markdown, [class*="prose"]'));
+  // When there is no message list at all (the signed-out landing page), there is no
+  // answer: marketing prose must never be mistaken for one, so the deep fallback only
+  // runs inside an existing list.
+  const list=main.querySelector('ol');
+  const censusList=list?'ol':'none';
+  let roots=list?[...list.children]:[];
+  if(list&&!roots.length)roots=[...main.querySelectorAll('div')].filter(d=>d.querySelector('.prose, .markdown, [class*="prose"]'));
   const msgs=[];
   for(const root of roots){
     const prose=root.querySelector('.prose, .markdown, [class*="prose"]');
@@ -153,16 +157,17 @@ function driverRead(){
     const cls=typeof root.className==='string'?root.className:'';
     msgs.push({user:/\b(justify-end|self-end)\b/.test(cls),root,text});
   }
-  if(!msgs.length){
-    // Shadow-piercing fallback, only paid for when the shallow read found nothing.
+  if(list&&!msgs.length){
+    // Shadow-piercing fallback, only paid for inside a real message list the shallow
+    // read somehow missed.
     const found=[];
     const walk=node=>{if(!node||typeof node.querySelectorAll!=='function')return;
       for(const el of node.querySelectorAll('.prose, .markdown, [class*="prose"]'))found.push(el);
       for(const el of node.querySelectorAll('*'))if(el.shadowRoot)walk(el.shadowRoot);};
-    walk(main);
+    walk(list);
     for(const prose of found){const text=String(prose.innerText||'');if(text.trim())msgs.push({user:false,root:prose,text});}
   }
-  const reversed=/column-reverse/.test(String(getComputedStyle(list).flexDirection||''));
+  const reversed=list?/column-reverse/.test(String(getComputedStyle(list).flexDirection||'')):false;
   const ordered=reversed?[...msgs].reverse():msgs;
   let lastAssistant=null,lastUser='';
   for(const m of ordered){if(m.user)lastUser=m.text;else lastAssistant=m;}
@@ -173,7 +178,7 @@ function driverRead(){
   const alert=document.querySelector('[role="alert"]');
   const errText=alert?(alert.textContent||'').trim():'';
   const generating=!!stopBtn||!!document.querySelector('[data-testid="pending-chat"]');
-  const census='list='+(list!==main?'ol':'none')+' roots='+roots.length+' msgs='+msgs.length+(reversed?' rev=1':'');
+  const census='list='+censusList+' roots='+roots.length+' msgs='+msgs.length+(reversed?' rev=1':'');
   return {text:lastAssistant?lastAssistant.text:'',userText:String(lastUser||'').slice(0,400),count:msgs.length,
     generating,idle:sendIdle&&!generating,census,
     error:errText&&/wrong|rejected|failed|error|limit|credit|quota/i.test(errText)?errText.slice(0,300):''};

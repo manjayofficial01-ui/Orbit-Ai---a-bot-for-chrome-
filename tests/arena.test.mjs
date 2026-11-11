@@ -393,3 +393,18 @@ test('relayTarget falls back to the dedicated relay tab without a workspace',asy
   const target=await relay.relayTarget();
   assert.deepEqual({kind:target.kind,id:target.id},{kind:'tab',id:7});
 });
+
+test('the signed-out landing page never reads as an answer',()=>{
+  // Arena's marketing prose ("Experience the frontier…") sits in .prose-like nodes on
+  // the landing page. Without a message list there is nothing to read — the dock must
+  // never fingerprint it as a fresh answer and offer to pull marketing copy into the
+  // transcript.
+  const doc=buildArenaDoc({domOrder:['user'],reversed:false});
+  const main=doc.querySelector('main');
+  main.children=main.children.filter(c=>c!==main.querySelector('ol')); // the landing page has no message list
+  const marketing={tagName:'DIV',className:'prose',innerText:'Experience the frontier — Arena is the place to compare the best models.',textContent:'',children:[],attrs:{},getAttribute(n){return this.attrs?.[n]??null;}};
+  main.children.push(marketing);
+  const r=runDriver('driverRead',doc,'https://arena.ai',{getComputedStyle:()=>({flexDirection:'column'})});
+  assert.equal(r.text,'','no message list means no answer, not marketing copy');
+  assert.match(r.census,/list=none/);
+});

@@ -250,8 +250,12 @@ function syncArenaEmbed(){
   if(!host)return;
   const open=state.arenaEmbed===true&&ui.arenaEmbedOpen===true;
   host.hidden=!open;
+  // While the live frame is open the text preview is a stale duplicate and the
+  // transcript needs every pixel: the dock body tightens around the embed.
+  const body=$('arenaDockBody');
+  if(body)body.classList.toggle('has-embed',open);
   const btn=$('arenaDockEmbed');
-  if(btn){btn.textContent=open?'Close the embedded view':'Open Arena here';btn.hidden=state.arenaEmbed!==true;}
+  if(btn){btn.textContent=open?'Close':'Open Arena here';btn.hidden=state.arenaEmbed!==true;}
   applyArenaEmbedHeight();
   if(open)mountArenaEmbed();else unmountArenaEmbed();
 }
